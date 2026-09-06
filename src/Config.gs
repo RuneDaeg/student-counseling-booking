@@ -7,7 +7,7 @@ const SHEET_BLOCK = '상담불가';
 const SHEET_BOOKING = '예약';
 
 const PROP_SS_ID = 'SPREADSHEET_ID';
-const PROP_API_KEY = 'ANTHROPIC_API_KEY';
+const PROP_API_KEY = 'AI_API_KEY';
 // 워크스페이스에 묶이지 않은 조직 단위 키를 쓸 때만 필요합니다.
 const PROP_WORKSPACE_ID = 'ANTHROPIC_WORKSPACE_ID';
 
@@ -36,7 +36,8 @@ const CONFIG_DEFAULTS = [
   ['신청 알림 메일', 'TRUE', '학생이 신청하면 교사에게 메일을 보냅니다.'],
   ['AI 분석 사용', 'TRUE', '학생이 쓴 고민을 AI가 정리해 상담 초안을 만듭니다.'],
   ['AI 분석 동의 필수', 'TRUE', 'TRUE면 학생이 동의한 경우에만 AI가 분석합니다.'],
-  ['AI 모델', 'claude-opus-5', '느리면 claude-sonnet-5 로 바꿔 보세요.'],
+  ['AI 제공자', 'claude', 'claude / gemini / openai 중 하나. 바꾸면 [② AI 키 등록]에서 키도 그 회사 것으로 바꿔 주세요.'],
+  ['AI 모델', '', '비워 두면 제공자별 기본 모델을 씁니다. 예: claude-opus-5 / gemini-2.5-flash / gpt-4o'],
   ['AI 분석 강도', 'medium', 'low / medium / high 중에서 고릅니다. 높을수록 꼼꼼하지만 느립니다.']
 ];
 
@@ -73,7 +74,7 @@ function getConfig() {
     });
   }
   // 비워 두는 것이 의미 있는 항목은 기본값으로 되돌리지 않습니다.
-  const keepBlank = ['담당 교사 이메일', '고정 학년', '고정 반', '요일별 추가 시간대'];
+  const keepBlank = ['담당 교사 이메일', '고정 학년', '고정 반', '요일별 추가 시간대', 'AI 모델'];
   CONFIG_DEFAULTS.forEach(function (def) {
     if (raw[def[0]] === undefined || (raw[def[0]] === '' && keepBlank.indexOf(def[0]) < 0)) {
       raw[def[0]] = def[1];
@@ -101,7 +102,8 @@ function getConfig() {
     notifyMail: bool_(raw['신청 알림 메일'], true),
     aiEnabled: bool_(raw['AI 분석 사용'], true),
     aiConsentRequired: bool_(raw['AI 분석 동의 필수'], true),
-    aiModel: str_(raw['AI 모델'], 'claude-opus-5'),
+    aiProvider: str_(raw['AI 제공자'], 'claude').toLowerCase(),
+    aiModel: str_(raw['AI 모델'], ''),
     aiEffort: str_(raw['AI 분석 강도'], 'medium').toLowerCase()
   };
 }

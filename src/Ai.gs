@@ -1,5 +1,8 @@
 /**
- * AI 상담 초안 만들기 (Anthropic Claude)
+ * AI 상담 초안 만들기
+ *
+ * 설정 시트의 [AI 제공자] 값에 따라 Claude / Gemini / GPT 중 하나를 부릅니다.
+ * 프롬프트와 결과 형식은 셋이 똑같이 씁니다.
  *
  * 개인정보 최소화: 학생 이름과 번호는 AI에게 보내지 않고,
  * 학년 / 상담 주제 / 학생이 쓴 글만 보냅니다.
@@ -7,6 +10,30 @@
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
+const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/';
+const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
+
+/** 쓸 수 있는 AI 제공자. 설정 시트의 [AI 제공자] 에 왼쪽 이름을 적습니다. */
+const AI_PROVIDERS = {
+  claude: {
+    label: 'Claude (Anthropic)',
+    defaultModel: 'claude-opus-5',
+    keyHint: 'sk-ant-... (console.anthropic.com)',
+    prefixes: ['claude']
+  },
+  gemini: {
+    label: 'Gemini (Google)',
+    defaultModel: 'gemini-2.5-flash',
+    keyHint: 'AIza... (aistudio.google.com/apikey)',
+    prefixes: ['gemini']
+  },
+  openai: {
+    label: 'GPT (OpenAI)',
+    defaultModel: 'gpt-4o',
+    keyHint: 'sk-... (platform.openai.com)',
+    prefixes: ['gpt', 'o1', 'o3', 'o4', 'chatgpt']
+  }
+};
 
 const ANALYSIS_SCHEMA = {
   type: 'object',
@@ -81,45 +108,74 @@ function analyzeConcern_(cfg, booking) {
     '교사가 상담을 준비할 수 있도록 정해진 형식에 맞춰 정리해 주세요.'
   ].join('\n');
 
-  const text = callClaude_(
-    cfg,
-    ANALYSIS_SYSTEM,
-    [{ role: 'user', content: userText }],
-    ANALYSIS_SCHEMA,
-    12000
-  );
+  const text = callAi_(cfg, ANALYSIS_SYSTEM, userText, ANALYSIS_SCHEMA, 12000);
 
   const parsed = JSON.parse(text);
   parsed.session_plan = parsed.session_plan || [];
   return parsed;
 }
 
-/** Anthropic Messages API 호출 */
-function callClaude_(cfg, system, messages, schema, maxTokens) {
-  const props = PropertiesService.getScriptProperties();
-  const key = props.getProperty(PROP_API_KEY);
-  if (!key) throw new Error('AI 키가 없습니다. 메뉴 [상담 관리 > AI 키 등록 / 변경]에서 등록해 주세요.');
+/* ---------- AI 호출 (제공자 공통 입구) ---------- */
 
-  const headers = { 'x-api-key': key, 'anthropic-version': ANTHROPIC_VERSION };
-  const workspaceId = (props.getProperty(PROP_WORKSPACE_ID) || '').trim();
-  if (workspaceId) headers['anthropic-workspace-id'] = workspaceId;
+/**
+ * 설정한 제공자에게 물어보고 답변 글자열을 돌려줍니다.
+ * @param {string} system  역할 설명
+ * @param {string} userText  물어볼 내용
+ * @param {Object} schema  JSON 형식을 강제할 스키마 (없으면 자유 형식)
+ */
+function callAi_(cfg, system, userText, schema, maxTokens) {
+  const provider = getProvider_(cfg);
+  const model = resolveModel_(cfg, provider);
+  const key = getAiKey_(provider);
+  const limit = maxTokens || 12000;
 
-  const body = {
-    model: cfg.aiModel,
-    max_tokens: maxTokens || 12000,
-    system: system,
-    messages: messages,
-    output_config: { effort: ['low', 'medium', 'high'].indexOf(cfg.aiEffort) >= 0 ? cfg.aiEffort : 'medium' }
-  };
-  if (schema) {
-    body.output_config.format = { type: 'json_schema', schema: schema };
+  if (provider === 'gemini') return callGemini_(key, model, system, userText, schema, limit);
+  if (provider === 'openai') return callOpenAi_(key, model, system, userText, schema, limit);
+  return callClaude_(cfg, key, model, system, userText, schema, limit);
+}
+
+function getProvider_(cfg) {
+  return AI_PROVIDERS[cfg.aiProvider] ? cfg.aiProvider : 'claude';
+}
+
+/** 설정의 모델 이름이 비었으면 기본값, 제공자와 어긋나면 알려 줍니다. */
+function resolveModel_(cfg, provider) {
+  const model = cfg.aiModel || AI_PROVIDERS[provider].defaultModel;
+  let owner = '';
+  Object.keys(AI_PROVIDERS).forEach(function (p) {
+    AI_PROVIDERS[p].prefixes.forEach(function (prefix) {
+      if (model.toLowerCase().indexOf(prefix) === 0) owner = p;
+    });
+  });
+  if (owner && owner !== provider) {
+    throw new Error(
+      '설정 시트가 어긋났습니다.\n' +
+      '[AI 제공자] 는 ' + provider + ' 인데 [AI 모델] 은 ' + model + ' 입니다.\n' +
+      '둘을 맞추거나, [AI 모델] 을 비워 두면 기본 모델(' + AI_PROVIDERS[provider].defaultModel + ')을 씁니다.'
+    );
   }
+  return model;
+}
 
+function getAiKey_(provider) {
+  const props = PropertiesService.getScriptProperties();
+  const key = (props.getProperty(PROP_API_KEY) || props.getProperty('ANTHROPIC_API_KEY') || '').trim();
+  if (!key) {
+    throw new Error(
+      'AI 키가 없습니다. 메뉴 [상담 관리 > ② AI 키 등록 / 변경]에서 등록해 주세요.\n' +
+      '지금 설정된 제공자: ' + AI_PROVIDERS[provider].label + ' — ' + AI_PROVIDERS[provider].keyHint
+    );
+  }
+  return key;
+}
+
+/** 세 제공자가 함께 쓰는 요청·재시도 처리 */
+function requestAi_(url, headers, body) {
   let lastError = '';
   for (let attempt = 0; attempt < 3; attempt++) {
     if (attempt > 0) Utilities.sleep(2000 * attempt);
 
-    const res = UrlFetchApp.fetch(ANTHROPIC_URL, {
+    const res = UrlFetchApp.fetch(url, {
       method: 'post',
       contentType: 'application/json',
       headers: headers,
@@ -134,19 +190,130 @@ function callClaude_(cfg, system, messages, schema, maxTokens) {
       lastError = 'API 응답 ' + code + ': ' + raw.slice(0, 300);
       continue; // 잠시 뒤 재시도
     }
-    if (code !== 200) {
-      throw new Error(explainApiError_(code, raw));
-    }
-
-    const json = JSON.parse(raw);
-    if (json.stop_reason === 'refusal') {
-      throw new Error('AI가 이 내용에 대한 응답을 거절했습니다. 교사가 직접 확인해 주세요.');
-    }
-    const blocks = (json.content || []).filter(function (b) { return b.type === 'text'; });
-    if (!blocks.length) throw new Error('AI 응답이 비어 있습니다.');
-    return blocks.map(function (b) { return b.text; }).join('');
+    if (code !== 200) throw new Error(explainApiError_(code, raw));
+    return JSON.parse(raw);
   }
   throw new Error('AI 서버가 응답하지 않습니다. ' + lastError);
+}
+
+/* ---------- 제공자별 호출 ---------- */
+
+/** Anthropic Messages API */
+function callClaude_(cfg, key, model, system, userText, schema, maxTokens) {
+  const headers = { 'x-api-key': key, 'anthropic-version': ANTHROPIC_VERSION };
+  const workspaceId = (PropertiesService.getScriptProperties().getProperty(PROP_WORKSPACE_ID) || '').trim();
+  if (workspaceId) headers['anthropic-workspace-id'] = workspaceId;
+
+  const body = {
+    model: model,
+    max_tokens: maxTokens,
+    system: system,
+    messages: [{ role: 'user', content: userText }],
+    output_config: { effort: ['low', 'medium', 'high'].indexOf(cfg.aiEffort) >= 0 ? cfg.aiEffort : 'medium' }
+  };
+  if (schema) body.output_config.format = { type: 'json_schema', schema: schema };
+
+  const json = requestAi_(ANTHROPIC_URL, headers, body);
+  if (json.stop_reason === 'refusal') {
+    throw new Error('AI가 이 내용에 대한 응답을 거절했습니다. 교사가 직접 확인해 주세요.');
+  }
+  const blocks = (json.content || []).filter(function (b) { return b.type === 'text'; });
+  if (!blocks.length) throw new Error('AI 응답이 비어 있습니다.');
+  return blocks.map(function (b) { return b.text; }).join('');
+}
+
+/** Google Gemini API */
+function callGemini_(key, model, system, userText, schema, maxTokens) {
+  const body = {
+    system_instruction: { parts: [{ text: system }] },
+    contents: [{ role: 'user', parts: [{ text: userText }] }],
+    generationConfig: { maxOutputTokens: maxTokens }
+  };
+  if (schema) {
+    body.generationConfig.responseMimeType = 'application/json';
+    body.generationConfig.responseSchema = toGeminiSchema_(schema);
+  }
+
+  const json = requestAi_(
+    GEMINI_URL + encodeURIComponent(model) + ':generateContent',
+    { 'x-goog-api-key': key },
+    body
+  );
+
+  const blocked = json.promptFeedback && json.promptFeedback.blockReason;
+  if (blocked) {
+    throw new Error('Gemini 가 이 내용을 차단했습니다 (' + blocked + '). 교사가 직접 확인해 주세요.');
+  }
+  const candidate = (json.candidates || [])[0];
+  if (!candidate) throw new Error('AI 응답이 비어 있습니다.');
+  if (candidate.finishReason === 'SAFETY' || candidate.finishReason === 'PROHIBITED_CONTENT') {
+    throw new Error('Gemini 가 안전 정책으로 응답을 멈췄습니다. 교사가 직접 확인해 주세요.');
+  }
+  if (candidate.finishReason === 'MAX_TOKENS') {
+    throw new Error('응답이 길이 제한에 걸렸습니다. 설정 시트의 AI 모델을 바꾸거나 다시 시도해 주세요.');
+  }
+  const parts = ((candidate.content || {}).parts || []).filter(function (p) { return p.text; });
+  if (!parts.length) throw new Error('AI 응답이 비어 있습니다.');
+  return parts.map(function (p) { return p.text; }).join('');
+}
+
+/**
+ * Gemini 의 스키마는 OpenAPI 형식이라 조금 다릅니다.
+ * - type 값을 대문자로 (STRING, OBJECT ...)
+ * - additionalProperties 는 받지 않으므로 뺍니다
+ */
+function toGeminiSchema_(node) {
+  if (!node || typeof node !== 'object') return node;
+  if (Array.isArray(node)) return node.map(toGeminiSchema_);
+
+  const out = {};
+  Object.keys(node).forEach(function (k) {
+    const v = node[k];
+    if (k === 'additionalProperties') return;
+    if (k === 'type' && typeof v === 'string') {
+      out.type = v.toUpperCase();
+    } else if (k === 'properties') {
+      out.properties = {};
+      Object.keys(v).forEach(function (p) { out.properties[p] = toGeminiSchema_(v[p]); });
+    } else if (k === 'enum' || k === 'required') {
+      out[k] = v; // 값은 그대로 둡니다
+    } else {
+      out[k] = toGeminiSchema_(v);
+    }
+  });
+  return out;
+}
+
+/** OpenAI Chat Completions API */
+function callOpenAi_(key, model, system, userText, schema, maxTokens) {
+  const body = {
+    model: model,
+    max_completion_tokens: maxTokens,
+    messages: [
+      { role: 'system', content: system },
+      { role: 'user', content: userText }
+    ]
+  };
+  if (schema) {
+    body.response_format = {
+      type: 'json_schema',
+      json_schema: { name: 'counseling_draft', strict: true, schema: schema }
+    };
+  }
+
+  const json = requestAi_(OPENAI_URL, { Authorization: 'Bearer ' + key }, body);
+
+  const choice = (json.choices || [])[0];
+  if (!choice) throw new Error('AI 응답이 비어 있습니다.');
+  if (choice.message && choice.message.refusal) {
+    throw new Error('AI가 이 내용에 대한 응답을 거절했습니다. 교사가 직접 확인해 주세요.');
+  }
+  if (choice.finish_reason === 'length') {
+    throw new Error('응답이 길이 제한에 걸렸습니다. 다시 시도하거나 다른 모델을 써 주세요.');
+  }
+  const text = choice.message && choice.message.content;
+  if (!text) throw new Error('AI 응답이 비어 있습니다.');
+  return text;
 }
 
 /** API 오류를 무엇을 고쳐야 하는지 알 수 있는 말로 바꿔 줍니다. */
@@ -164,14 +331,17 @@ function explainApiError_(code, raw) {
       '1) 콘솔에서 워크스페이스를 지정해 API 키를 새로 만든 뒤 [② AI 키 등록]에 다시 넣기 (권장)\n' +
       '2) 메뉴 [②-1 AI 워크스페이스 ID 등록]에 wrkspc_ 로 시작하는 ID 넣기';
   }
-  if (code === 401) {
-    return 'API 키가 올바르지 않습니다. [② AI 키 등록 / 변경]에서 다시 넣어 주세요.';
+  if (code === 401 || code === 403 || message.indexOf('API key not valid') >= 0 || message.indexOf('Incorrect API key') >= 0) {
+    return 'API 키가 올바르지 않거나 권한이 없습니다.\n' +
+      '설정 시트의 [AI 제공자] 와 등록한 키가 같은 회사 것인지 확인한 뒤\n' +
+      '[② AI 키 등록 / 변경]에서 다시 넣어 주세요.\n원문: ' + message;
   }
-  if (code === 404 && message.indexOf('model') >= 0) {
-    return '설정 시트의 [AI 모델] 이름을 찾을 수 없습니다. claude-opus-5 또는 claude-sonnet-5 로 적어 주세요.\n원문: ' + message;
+  if (message.indexOf('model') >= 0 && (code === 404 || code === 400)) {
+    return '설정 시트의 [AI 모델] 이름을 찾을 수 없습니다.\n' +
+      '비워 두면 제공자별 기본 모델을 씁니다.\n원문: ' + message;
   }
-  if (message.indexOf('credit') >= 0 || message.indexOf('billing') >= 0) {
-    return '콘솔의 크레딧·결제 상태를 확인해 주세요.\n원문: ' + message;
+  if (message.indexOf('credit') >= 0 || message.indexOf('billing') >= 0 || message.indexOf('quota') >= 0) {
+    return '크레딧·사용량 한도를 확인해 주세요.\n원문: ' + message;
   }
   return 'AI 호출 실패 (' + code + '): ' + (message || String(raw).slice(0, 300));
 }

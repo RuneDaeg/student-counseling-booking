@@ -175,12 +175,19 @@ function ensureRecurringTrigger_() {
 
 function promptApiKey() {
   const ui = SpreadsheetApp.getUi();
-  const current = PropertiesService.getScriptProperties().getProperty(PROP_API_KEY);
+  const props = PropertiesService.getScriptProperties();
+  const current = props.getProperty(PROP_API_KEY) || props.getProperty('ANTHROPIC_API_KEY');
+  const provider = getProvider_(getConfig());
+  const info = AI_PROVIDERS[provider];
+
   const res = ui.prompt(
     'AI 키 등록',
-    'Anthropic API 키(sk-ant-...)를 붙여 넣어 주세요.' +
-    (current ? '\n\n현재 등록된 키: ' + current.slice(0, 8) + '…' + current.slice(-4) : '') +
-    '\n\n키는 스크립트 속성에 저장되며 스프레드시트에는 남지 않습니다.',
+    '지금 설정된 제공자: ' + info.label + '\n' +
+    '필요한 키: ' + info.keyHint + '\n\n' +
+    '키를 붙여 넣어 주세요.' +
+    (current ? '\n\n현재 등록된 키: ' + current.slice(0, 6) + '…' + current.slice(-4) : '') +
+    '\n\n다른 회사 AI를 쓰려면 설정 시트의 [AI 제공자] 를 먼저 바꾼 뒤 이 메뉴로 돌아오세요.\n' +
+    '키는 스크립트 속성에 저장되며 스프레드시트에는 남지 않습니다.',
     ui.ButtonSet.OK_CANCEL
   );
   if (res.getSelectedButton() !== ui.Button.OK) return;
@@ -228,18 +235,24 @@ function promptWorkspaceId() {
 
 function testAiConnection() {
   const ui = SpreadsheetApp.getUi();
+  const cfg = getConfig();
+  const provider = getProvider_(cfg);
   try {
-    const cfg = getConfig();
-    const text = callClaude_(
+    const text = callAi_(
       cfg,
       '당신은 연결 확인용 도우미입니다. 한 문장으로만 답하세요.',
-      [{ role: 'user', content: '연결 확인. "정상"이라고만 답해 주세요.' }],
+      '연결 확인. "정상"이라고만 답해 주세요.',
       null,
       4000
     );
-    ui.alert('AI 연결 성공\n\n모델: ' + cfg.aiModel + '\n응답: ' + text.slice(0, 200));
+    ui.alert(
+      'AI 연결 성공\n\n' +
+      '제공자: ' + AI_PROVIDERS[provider].label + '\n' +
+      '모델: ' + resolveModel_(cfg, provider) + '\n' +
+      '응답: ' + text.slice(0, 200)
+    );
   } catch (e) {
-    ui.alert('AI 연결 실패\n\n' + e.message);
+    ui.alert('AI 연결 실패\n\n제공자: ' + AI_PROVIDERS[provider].label + '\n\n' + e.message);
   }
 }
 
