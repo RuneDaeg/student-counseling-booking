@@ -1,0 +1,107 @@
+<script>
+// 미리보기용 가짜 서버 (실제 배포에는 포함되지 않습니다)
+(function () {
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+  function hhmm(min) { return pad(Math.floor(min / 60)) + ':' + pad(min % 60); }
+  var DOW = ['월', '화', '수', '목', '금', '토', '일'];
+  var BASE_TIMES = [13 * 60 + 10, 16 * 60 + 30];          // 13:10, 16:30
+  var EXTRA = { 3: [15 * 60 + 30], 5: [15 * 60 + 30] };   // 수·금 15:30 추가
+  var SLOT_MINUTES = 30;
+
+  var base = new Date();
+  var days = [];
+  var nth = 0; // 오늘이 무슨 요일이든 같은 예시가 나오도록 평일만 세어 씁니다
+  for (var i = 1; i <= 21; i++) {
+    var d = new Date(base.getFullYear(), base.getMonth(), base.getDate() + i);
+    var key = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+    var dow = (d.getDay() + 6) % 7 + 1;
+    var label = (d.getMonth() + 1) + '월 ' + d.getDate() + '일 (' + DOW[dow - 1] + ')';
+
+    if (dow > 5) {
+      days.push({ date: key, dow: dow, label: label, status: 'closed', reason: '상담을 받지 않는 요일이에요', slots: [] });
+      continue;
+    }
+    nth++;
+    if (nth === 2) {
+      days.push({ date: key, dow: dow, label: label, status: 'blocked', reason: '선생님 일정 · 출장', slots: [] });
+      continue;
+    }
+
+    var starts = BASE_TIMES.concat(EXTRA[dow] || []).sort(function (a, b) { return a - b; });
+    var openCount = 0;
+    var slots = starts.map(function (m) {
+      var reason = '';
+      if (nth === 4) reason = '이미 예약이 찼어요';                                  // 하루 전체 마감 예시
+      else if (nth === 3 && m >= 16 * 60) reason = '선생님 일정 · 부장회의';         // 시간대만 차단 예시
+      else if (nth === 5 && m === 13 * 60 + 10) reason = '이미 예약이 찼어요';       // 한 칸만 찬 예시
+      if (reason) return { start: hhmm(m), end: hhmm(m + SLOT_MINUTES), available: false, reason: reason };
+      openCount++;
+      return { start: hhmm(m), end: hhmm(m + SLOT_MINUTES), available: true, left: 1 };
+    });
+    days.push({
+      date: key,
+      dow: dow,
+      label: label,
+      status: openCount ? 'open' : 'full',
+      reason: openCount ? '' : '이미 예약이 찼어요',
+      slots: slots
+    });
+  }
+
+  var MOCK = {
+    ok: true,
+    title: '상담 신청',
+    notice: '상담을 원하는 날짜와 시간을 고르고, 하고 싶은 이야기를 편하게 적어 주세요.',
+    topics: ['학업·성적', '교우관계', '진로·진학', '가정', '정서·마음건강', '학교생활', '기타'],
+    minChars: 20,
+    fixedGrade: '2',
+    fixedClass: '10',
+    aiEnabled: true,
+    aiConsentRequired: true,
+    slotMinutes: SLOT_MINUTES,
+    firstDate: days[0].date,
+    lastDate: days[days.length - 1].date,
+    days: days
+  };
+
+  function runner() {
+    var self = {};
+    self.withSuccessHandler = function (f) { self._s = f; return self; };
+    self.withFailureHandler = function (f) { self._f = f; return self; };
+    self.getAvailability = function () {
+      setTimeout(function () { self._s(JSON.parse(JSON.stringify(MOCK))); }, 250);
+    };
+    self.submitReservation = function (p) {
+      setTimeout(function () {
+        var day = MOCK.days.filter(function (d) { return d.date === p.date; })[0] || {};
+        var slot = (day.slots || []).filter(function (s) { return s.start === p.start; })[0] || {};
+        self._s({
+          ok: true,
+          bookingId: '260908-AB3D',
+          dateLabel: day.label || p.date,
+          timeLabel: p.start + ' ~ ' + (slot.end || p.start),
+          name: p.name
+        });
+      }, 500);
+    };
+    self.cancelReservation = function (id, name) {
+      setTimeout(function () {
+        self._s(id && name
+          ? { ok: true, message: '9월 10일 (목) 13:10 신청을 취소했습니다.' }
+          : { ok: false, message: '예약번호와 이름을 모두 입력해 주세요.' });
+      }, 400);
+    };
+    return self;
+  }
+
+  window.google = {
+    script: {
+      run: {
+        withSuccessHandler: function (f) { return runner().withSuccessHandler(f); },
+        withFailureHandler: function (f) { return runner().withFailureHandler(f); },
+        getAvailability: function () { return runner().getAvailability(); }
+      }
+    }
+  };
+})();
+</script>

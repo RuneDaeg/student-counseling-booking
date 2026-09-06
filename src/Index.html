@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title><?= appTitle ?></title>
+  <?!= include('Stylesheet'); ?>
+</head>
+<body>
+
+<div id="loading" class="center-box">
+  <div class="spinner" aria-hidden="true"></div>
+  <p>상담 가능한 날짜를 불러오는 중입니다…</p>
+</div>
+
+<div id="fatal" class="center-box" hidden>
+  <p class="fatal-msg"></p>
+  <button class="btn ghost" onclick="location.reload()">다시 불러오기</button>
+</div>
+
+<main id="app" hidden>
+  <header class="head">
+    <h1 id="appTitle"><?= appTitle ?></h1>
+    <p id="notice" class="notice"></p>
+  </header>
+
+  <section class="card" id="stepDate">
+    <h2><span class="num">1</span> 날짜 고르기</h2>
+    <div class="cal-head">
+      <button type="button" class="nav" id="prevMonth" aria-label="이전 달">‹</button>
+      <strong id="monthLabel"></strong>
+      <button type="button" class="nav" id="nextMonth" aria-label="다음 달">›</button>
+    </div>
+    <div class="cal-dow" aria-hidden="true">
+      <span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span class="sat">토</span><span class="sun">일</span>
+    </div>
+    <div class="cal-grid" id="calGrid"></div>
+    <p class="legend">
+      <span class="dot open"></span> 신청 가능
+      <span class="dot blocked"></span> 상담 불가
+      <span class="dot full"></span> 마감
+    </p>
+    <p class="legend hint-tap">고를 수 없는 날짜·시간에 마우스를 올리거나 눌러 보면 이유가 나와요.</p>
+  </section>
+
+  <section class="card" id="stepTime" hidden>
+    <h2><span class="num">2</span> 시간 고르기</h2>
+    <p class="sub" id="pickedDate"></p>
+    <div class="slots" id="slotList"></div>
+  </section>
+
+  <section class="card" id="stepForm" hidden>
+    <h2><span class="num">3</span> 내 정보와 하고 싶은 이야기</h2>
+
+    <p class="fixed-who" id="fixedWho" hidden></p>
+
+    <div class="row3" id="gradeRow">
+      <label>학년<input id="grade" type="number" min="1" max="6" inputmode="numeric" placeholder="1"></label>
+      <label>반<input id="classNo" type="number" min="1" max="30" inputmode="numeric" placeholder="3"></label>
+      <label id="studentNoLabel">번호<input id="studentNo" type="number" min="1" max="60" inputmode="numeric" placeholder="12"></label>
+    </div>
+
+    <div id="nameRow">
+      <label>이름<input id="name" type="text" maxlength="20" placeholder="홍길동"></label>
+    </div>
+
+    <label>상담 주제
+      <select id="topic"></select>
+    </label>
+
+    <label class="concern-label">
+      하고 싶은 이야기
+      <span class="counter"><b id="charCount">0</b>자</span>
+      <textarea id="concern" rows="8" placeholder="어떤 일이 있었는지, 요즘 어떤 마음인지 편하게 적어 주세요. 자세히 적어 줄수록 선생님이 더 잘 준비할 수 있어요."></textarea>
+    </label>
+    <p class="hint" id="minHint"></p>
+
+    <label class="check" id="consentBox" hidden>
+      <input type="checkbox" id="aiConsent">
+      <span>
+        상담 준비를 위해 내가 쓴 내용을 <b>AI가 요약·정리</b>하는 데 동의합니다.
+        <em>정리한 내용은 담당 선생님만 봅니다. 이름과 번호는 AI에게 보내지 않습니다.</em>
+      </span>
+    </label>
+
+    <p class="err" id="formErr" hidden></p>
+    <button class="btn primary" id="submitBtn">상담 신청하기</button>
+  </section>
+
+  <p class="cancel-link"><button type="button" id="openCancel" class="linkish">이미 신청한 상담을 취소하고 싶어요</button></p>
+</main>
+
+<section id="done" class="card done" hidden>
+  <div class="check-mark" aria-hidden="true">✓</div>
+  <h2>신청이 접수되었습니다</h2>
+  <p class="done-when" id="doneWhen"></p>
+  <div class="ticket">
+    <span>예약번호</span>
+    <strong id="doneId"></strong>
+  </div>
+  <p class="hint">취소할 때 예약번호가 필요합니다. 화면을 캡처해 두세요.</p>
+  <button class="btn ghost" onclick="location.reload()">처음으로</button>
+</section>
+
+<section id="cancelPanel" class="card" hidden>
+  <h2>신청 취소</h2>
+  <label>예약번호<input id="cancelId" type="text" placeholder="260908-AB3D" autocapitalize="characters"></label>
+  <label>이름<input id="cancelName" type="text" maxlength="20" placeholder="홍길동"></label>
+  <p class="err" id="cancelErr" hidden></p>
+  <p class="ok" id="cancelOk" hidden></p>
+  <div class="btn-row">
+    <button class="btn ghost" id="closeCancel">돌아가기</button>
+    <button class="btn danger" id="doCancel">취소하기</button>
+  </div>
+</section>
+
+<footer class="foot">상담 내용은 담당 선생님만 볼 수 있습니다.</footer>
+
+<?!= include('JavaScript'); ?>
+</body>
+</html>

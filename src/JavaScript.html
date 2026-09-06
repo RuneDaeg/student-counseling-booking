@@ -1,0 +1,377 @@
+<script>
+(function () {
+  var DATA = null;
+  var byDate = {};
+  var picked = { date: null, start: null, end: null };
+  var viewMonth = null;      // 'yyyy-MM'
+  var firstMonth = null;
+  var lastMonth = null;
+  var sending = false;
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  /* ---------- 시작 ---------- */
+
+  document.addEventListener('DOMContentLoaded', function () {
+    google.script.run.withSuccessHandler(onData).withFailureHandler(onFatal).getAvailability();
+    bindEvents();
+    bindTips();
+  });
+
+  function onFatal(err) {
+    $('loading').hidden = true;
+    var box = $('fatal');
+    box.hidden = false;
+    box.querySelector('.fatal-msg').textContent =
+      '화면을 불러오지 못했습니다.\n' + (err && err.message ? err.message : '잠시 뒤 다시 시도해 주세요.');
+  }
+
+  function onData(data) {
+    DATA = data;
+    data.days.forEach(function (d) { byDate[d.date] = d; });
+
+    firstMonth = data.firstDate.slice(0, 7);
+    lastMonth = data.lastDate.slice(0, 7);
+    var firstOpen = data.days.filter(function (d) { return d.status === 'open'; })[0];
+    viewMonth = firstOpen ? firstOpen.date.slice(0, 7) : firstMonth;
+
+    $('appTitle').textContent = data.title;
+    $('notice').textContent = data.notice;
+    $('minHint').textContent = '최소 ' + data.minChars + '자 이상 적어 주세요.';
+
+    var topic = $('topic');
+    topic.innerHTML = '<option value="">고르지 않음</option>';
+    (data.topics || []).forEach(function (t) {
+      var o = document.createElement('option');
+      o.value = t; o.textContent = t;
+      topic.appendChild(o);
+    });
+    if (!data.topics || !data.topics.length) topic.parentNode.hidden = true;
+
+    // 학년·반이 설정에 고정돼 있으면 입력칸 대신 안내로 보여 주고, 번호는 이름 옆으로 옮깁니다.
+    if (data.fixedGrade && data.fixedClass) {
+      $('fixedWho').textContent = data.fixedGrade + '학년 ' + data.fixedClass + '반';
+      $('fixedWho').hidden = false;
+      var nameRow = $('nameRow');
+      nameRow.classList.add('row2');
+      nameRow.insertBefore($('studentNoLabel'), nameRow.firstElementChild);
+      $('gradeRow').hidden = true;
+    }
+    $('consentBox').hidden = !data.aiEnabled;
+
+    renderCalendar();
+    $('loading').hidden = true;
+    $('app').hidden = false;
+  }
+
+  /* ---------- 달력 ---------- */
+
+  function renderCalendar() {
+    var parts = viewMonth.split('-').map(Number);
+    var year = parts[0], month = parts[1];
+    $('monthLabel').textContent = year + '년 ' + month + '월';
+    $('prevMonth').disabled = viewMonth <= firstMonth;
+    $('nextMonth').disabled = viewMonth >= lastMonth;
+
+    var grid = $('calGrid');
+    grid.innerHTML = '';
+
+    var firstDow = (new Date(Date.UTC(year, month - 1, 1)).getUTCDay() + 6) % 7; // 0=월
+    var total = new Date(Date.UTC(year, month, 0)).getUTCDate();
+
+    for (var b = 0; b < firstDow; b++) {
+      grid.appendChild(makeCell_('', 'blank'));
+    }
+    for (var d = 1; d <= total; d++) {
+      var key = year + '-' + pad_(month) + '-' + pad_(d);
+      var info = byDate[key];
+      var cell;
+      if (!info) {
+        cell = makeCell_(d, 'out');
+        setReason_(cell, '신청할 수 있는 기간이 아니에요');
+      } else if (info.status === 'open') {
+        var open = info.slots.filter(function (s) { return s.available; }).length;
+        cell = makeCell_(d, 'open' + (picked.date === key ? ' selected' : ''), true);
+        cell.dataset.date = key;
+        cell.setAttribute('aria-label', info.label + ' · 신청 가능한 시간 ' + open + '개');
+        cell.addEventListener('click', function () { selectDate(this.dataset.date); });
+      } else {
+        cell = makeCell_(d, info.status === 'closed' ? 'out' : info.status);
+        setReason_(cell, info.reason || '이 날은 신청할 수 없어요', info.label);
+      }
+      grid.appendChild(cell);
+    }
+  }
+
+  function makeCell_(label, cls, withMark) {
+    var el = document.createElement('button');
+    el.type = 'button';
+    el.className = 'cell ' + cls;
+    el.textContent = label;
+    if (cls.indexOf('open') < 0) el.setAttribute('aria-disabled', 'true');
+    if (cls.indexOf('blank') >= 0) el.tabIndex = -1;
+    if (withMark) {
+      var mark = document.createElement('span');
+      mark.className = 'mark';
+      el.appendChild(mark);
+    }
+    return el;
+  }
+
+  /** 고를 수 없는 이유를 붙여 둡니다. 마우스를 올리거나 누르면 보입니다. */
+  function setReason_(el, reason, prefix) {
+    var text = (prefix ? prefix + ' — ' : '') + reason;
+    el.dataset.reason = text;
+    el.setAttribute('aria-label', text);
+    el.title = text; // 데스크톱 기본 툴팁도 함께
+  }
+
+  function pad_(n) { return (n < 10 ? '0' : '') + n; }
+
+  /* ---------- 시간 ---------- */
+
+  function selectDate(key) {
+    picked.date = key;
+    picked.start = null;
+    renderCalendar();
+
+    var info = byDate[key];
+    $('pickedDate').textContent = info.label;
+    var list = $('slotList');
+    list.innerHTML = '';
+    info.slots.forEach(function (s) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = s.start;
+
+      if (!s.available) {
+        b.className = 'slot off';
+        b.setAttribute('aria-disabled', 'true');
+        setReason_(b, s.reason || '고를 수 없는 시간이에요', s.start);
+        list.appendChild(b);
+        return;
+      }
+
+      b.className = 'slot';
+      if (s.left > 1) b.textContent += ' (' + s.left + '자리)';
+      b.addEventListener('click', function () {
+        picked.start = s.start;
+        picked.end = s.end;
+        Array.prototype.forEach.call(list.children, function (c) { c.classList.remove('selected'); });
+        b.classList.add('selected');
+        $('stepForm').hidden = false;
+        scrollTo_('stepForm');
+      });
+      list.appendChild(b);
+    });
+    $('stepTime').hidden = false;
+    $('stepForm').hidden = true;
+    scrollTo_('stepTime');
+  }
+
+  /* ---------- 안내 말풍선 ---------- */
+
+  var tipEl = null;
+
+  function tip_() {
+    if (!tipEl) {
+      tipEl = document.createElement('div');
+      tipEl.className = 'tip';
+      tipEl.setAttribute('role', 'status');
+      tipEl.hidden = true;
+      document.body.appendChild(tipEl);
+    }
+    return tipEl;
+  }
+
+  function showTip_(el) {
+    var text = el.dataset.reason;
+    if (!text) return;
+    var tip = tip_();
+    tip.textContent = text;
+    tip.hidden = false;
+
+    var box = el.getBoundingClientRect();
+    var w = tip.offsetWidth;
+    var left = box.left + box.width / 2 - w / 2;
+    var margin = 8;
+    if (left < margin) left = margin;
+    if (left + w > window.innerWidth - margin) left = window.innerWidth - margin - w;
+
+    var top = box.top - tip.offsetHeight - 8;
+    tip.classList.toggle('below', top < margin);
+    if (top < margin) top = box.bottom + 8;
+
+    tip.style.left = Math.round(left + window.pageXOffset) + 'px';
+    tip.style.top = Math.round(top + window.pageYOffset) + 'px';
+    // 화면 끝에서 말풍선이 밀려도 꼬리는 대상 가운데를 가리키게
+    var arrow = Math.min(Math.max(box.left + box.width / 2 - left, 12), w - 12);
+    tip.style.setProperty('--arrow', Math.round(arrow) + 'px');
+  }
+
+  function hideTip_() {
+    if (tipEl) tipEl.hidden = true;
+  }
+
+  function bindTips() {
+    var pick = function (e) {
+      return e.target && e.target.closest ? e.target.closest('[data-reason]') : null;
+    };
+    document.addEventListener('mouseover', function (e) {
+      var el = pick(e);
+      if (el) showTip_(el); else hideTip_();
+    });
+    document.addEventListener('focusin', function (e) {
+      var el = pick(e);
+      if (el) showTip_(el); else hideTip_();
+    });
+    document.addEventListener('click', function (e) {
+      var el = pick(e);           // 휴대폰에는 마우스오버가 없으므로 눌러서 봅니다
+      if (el) showTip_(el); else hideTip_();
+    });
+    document.addEventListener('mouseleave', hideTip_, true);
+    document.addEventListener('focusout', hideTip_);
+    window.addEventListener('scroll', hideTip_, true);
+    window.addEventListener('resize', hideTip_);
+  }
+
+  function scrollTo_(id) {
+    setTimeout(function () {
+      var el = $(id);
+      if (el && el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 60);
+  }
+
+  /* ---------- 신청 ---------- */
+
+  function bindEvents() {
+    $('prevMonth').addEventListener('click', function () { shiftMonth_(-1); });
+    $('nextMonth').addEventListener('click', function () { shiftMonth_(1); });
+    $('concern').addEventListener('input', function () {
+      $('charCount').textContent = this.value.replace(/\s/g, '').length;
+    });
+    $('submitBtn').addEventListener('click', submit);
+    $('openCancel').addEventListener('click', function () {
+      $('app').hidden = true;
+      $('cancelPanel').hidden = false;
+    });
+    $('closeCancel').addEventListener('click', function () {
+      $('cancelPanel').hidden = true;
+      $('app').hidden = false;
+    });
+    $('doCancel').addEventListener('click', doCancel);
+  }
+
+  function shiftMonth_(delta) {
+    var p = viewMonth.split('-').map(Number);
+    var d = new Date(Date.UTC(p[0], p[1] - 1 + delta, 1));
+    viewMonth = d.getUTCFullYear() + '-' + pad_(d.getUTCMonth() + 1);
+    renderCalendar();
+  }
+
+  function submit() {
+    if (sending) return;
+    var err = $('formErr');
+    err.hidden = true;
+
+    var fixed = DATA.fixedGrade && DATA.fixedClass;
+    var payload = {
+      date: picked.date,
+      start: picked.start,
+      grade: fixed ? DATA.fixedGrade : $('grade').value.trim(),
+      classNo: fixed ? DATA.fixedClass : $('classNo').value.trim(),
+      studentNo: $('studentNo').value.trim(),
+      name: $('name').value.trim(),
+      topic: $('topic').value,
+      concern: $('concern').value,
+      aiConsent: $('aiConsent').checked
+    };
+
+    var problem = '';
+    if (!payload.date || !payload.start) problem = '날짜와 시간을 골라 주세요.';
+    else if (!payload.grade || !payload.classNo) problem = '학년과 반을 입력해 주세요.';
+    else if (!payload.studentNo) problem = '번호를 입력해 주세요.';
+    else if (!payload.name) problem = '이름을 입력해 주세요.';
+    else if (payload.concern.replace(/\s/g, '').length < DATA.minChars) problem = '하고 싶은 이야기를 ' + DATA.minChars + '자 이상 적어 주세요.';
+    else if (DATA.aiEnabled && DATA.aiConsentRequired && !payload.aiConsent) problem = 'AI 요약에 동의해야 신청할 수 있습니다.';
+
+    if (problem) {
+      err.textContent = problem;
+      err.hidden = false;
+      return;
+    }
+
+    sending = true;
+    var btn = $('submitBtn');
+    btn.disabled = true;
+    btn.textContent = '신청하는 중…';
+
+    google.script.run
+      .withSuccessHandler(function (res) {
+        sending = false;
+        btn.disabled = false;
+        btn.textContent = '상담 신청하기';
+        if (!res.ok) {
+          err.textContent = res.message;
+          err.hidden = false;
+          if (res.refresh) {
+            google.script.run.withSuccessHandler(function (fresh) {
+              DATA = fresh;
+              byDate = {};
+              fresh.days.forEach(function (d) { byDate[d.date] = d; });
+              picked.start = null;
+              renderCalendar();
+              if (picked.date && byDate[picked.date] && byDate[picked.date].status === 'open') selectDate(picked.date);
+              else { $('stepTime').hidden = true; $('stepForm').hidden = true; }
+            }).getAvailability();
+          }
+          return;
+        }
+        $('app').hidden = true;
+        $('done').hidden = false;
+        $('doneWhen').textContent = res.dateLabel + ' ' + res.timeLabel;
+        $('doneId').textContent = res.bookingId;
+        window.scrollTo(0, 0);
+      })
+      .withFailureHandler(function (e) {
+        sending = false;
+        btn.disabled = false;
+        btn.textContent = '상담 신청하기';
+        err.textContent = '신청을 저장하지 못했습니다.\n' + (e && e.message ? e.message : '잠시 뒤 다시 시도해 주세요.');
+        err.hidden = false;
+      })
+      .submitReservation(payload);
+  }
+
+  /* ---------- 취소 ---------- */
+
+  function doCancel() {
+    var err = $('cancelErr');
+    var ok = $('cancelOk');
+    err.hidden = true;
+    ok.hidden = true;
+    var btn = $('doCancel');
+    btn.disabled = true;
+
+    google.script.run
+      .withSuccessHandler(function (res) {
+        btn.disabled = false;
+        if (res.ok) {
+          ok.textContent = res.message;
+          ok.hidden = false;
+          $('cancelId').value = '';
+          $('cancelName').value = '';
+        } else {
+          err.textContent = res.message;
+          err.hidden = false;
+        }
+      })
+      .withFailureHandler(function (e) {
+        btn.disabled = false;
+        err.textContent = e && e.message ? e.message : '취소하지 못했습니다.';
+        err.hidden = false;
+      })
+      .cancelReservation($('cancelId').value, $('cancelName').value);
+  }
+})();
+</script>

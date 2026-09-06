@@ -1,0 +1,7 @@
+# clasp push 로 올릴 파일만 남깁니다 (rootDir 가 src 가 아닐 때 대비)
+**/**
+!appsscript.json
+!*.gs
+!Index.html
+!Stylesheet.html
+!JavaScript.html

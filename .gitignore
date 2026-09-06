@@ -1,0 +1,12 @@
+# clasp 가 만드는 파일 (내 프로젝트 ID가 들어갑니다)
+.clasp.json
+.clasprc.json
+
+# 미리보기 빌드 결과물
+tools/preview.html
+
+# 편집기 / OS
+node_modules/
+.DS_Store
+Thumbs.db
+.claude/

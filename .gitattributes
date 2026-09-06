@@ -1,0 +1,12 @@
+* text=auto
+
+# 셸 스크립트는 반드시 LF (CRLF 면 macOS/Linux 에서 실행이 깨집니다)
+*.sh text eol=lf
+
+# 윈도우 PowerShell 스크립트는 CRLF
+*.ps1 text eol=crlf
+
+# Apps Script 소스
+*.gs   text eol=lf
+*.html text eol=lf
+*.json text eol=lf
