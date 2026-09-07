@@ -1,4 +1,4 @@
-# ---------------------------------------------------------------
+﻿# ---------------------------------------------------------------
 #  상담 신청 웹앱 설치 (Windows PowerShell)
 #
 #    .\install.ps1
@@ -28,28 +28,38 @@ if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
+# clasp 출력을 그대로 보여 줘야 로그인 주소 같은 안내가 보입니다.
+# 그래서 결과를 변수에 담지 않고, 성공 여부는 $LASTEXITCODE 로만 확인합니다.
 function Invoke-Clasp {
     param([string[]]$ClaspArgs)
     & npx --yes "@google/clasp@latest" @ClaspArgs
-    return $LASTEXITCODE
 }
 
 if (Test-Path ".clasp.json") {
-    Write-Host "  이미 설치된 프로젝트가 있습니다. 코드만 새로 올립니다."
-    Invoke-Clasp @("push", "--force") | Out-Null
-    Invoke-Clasp @("open-script") | Out-Null
+    Write-Host "  이미 연결된 프로젝트가 있습니다. 코드만 새로 올립니다."
+    Invoke-Clasp @("push", "--force")
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "  [멈춤] 올리지 못했습니다. 위 오류를 확인해 주세요."
+        exit 1
+    }
+    Write-Host ""
+    Write-Host "  올렸습니다. 학생 화면에 반영하려면 편집기에서 [배포 > 배포 관리]로"
+    Write-Host "  새 버전을 배포해 주세요. (스프레드시트 메뉴는 이미 바뀌었습니다)"
+    Invoke-Clasp @("open-script")
     exit 0
 }
 
 Write-Host "  [1/4] 구글 계정 로그인 (브라우저가 열립니다)"
-if ((Invoke-Clasp @("login")) -ne 0) {
+Invoke-Clasp @("login")
+if ($LASTEXITCODE -ne 0) {
     Write-Host "  [멈춤] 로그인에 실패했습니다."
     exit 1
 }
 
 Write-Host ""
 Write-Host "  [2/4] 구글 드라이브에 스프레드시트와 스크립트를 만듭니다"
-if ((Invoke-Clasp @("create-script", "--type", "sheets", "--title", $Title, "--rootDir", "src")) -ne 0) {
+Invoke-Clasp @("create-script", "--type", "sheets", "--title", $Title, "--rootDir", "src")
+if ($LASTEXITCODE -ne 0) {
     Write-Host ""
     Write-Host "  [멈춤] 만들지 못했습니다. 아래를 확인해 주세요."
     Write-Host "     https://script.google.com/home/usersettings 에서"
@@ -59,11 +69,11 @@ if ((Invoke-Clasp @("create-script", "--type", "sheets", "--title", $Title, "--r
 
 Write-Host ""
 Write-Host "  [3/4] 코드를 올립니다"
-Invoke-Clasp @("push", "--force") | Out-Null
+Invoke-Clasp @("push", "--force")
 
 Write-Host ""
 Write-Host "  [4/4] 편집기를 엽니다"
-Invoke-Clasp @("open-script") | Out-Null
+Invoke-Clasp @("open-script")
 
 Write-Host @"
 
