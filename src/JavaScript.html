@@ -37,6 +37,12 @@
 
     $('appTitle').textContent = data.title;
     $('notice').textContent = data.notice;
+
+    if (data.windowMessage) {
+      $('windowMsg').textContent = data.windowMessage;
+      $('windowMsg').hidden = false;
+      $('stepDate').hidden = true;   // 고를 날짜가 없으면 달력을 감춥니다
+    }
     $('minHint').textContent = '최소 ' + data.minChars + '자 이상 적어 주세요.';
 
     var topic = $('topic');

@@ -15,6 +15,12 @@ const CONFIG_HEADERS = ['항목', '값', '설명'];
 /** 예전 버전에서 쓰던 설정 항목. 최초 설정을 다시 실행하면 지웁니다. */
 const OBSOLETE_CONFIG_KEYS = ['상담 시작 시각', '상담 종료 시각', '상담 사이 쉬는 시간(분)', '연락처 필수'];
 
+/** 이름만 바뀐 설정 항목. 적어 두신 값은 그대로 옮겨 옵니다. */
+const CONFIG_RENAMES = {
+  '예약 시작(오늘부터 며칠 뒤)': '예약 시작',
+  '예약 종료(오늘부터 며칠 뒤)': '예약 종료'
+};
+
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('상담 관리')
@@ -43,6 +49,16 @@ function setupSpreadsheet() {
       existing[String(r[0]).trim()] = i + 2;
     });
   }
+  // 이름이 바뀐 항목은 값을 지키기 위해 제자리에서 이름만 고칩니다.
+  Object.keys(CONFIG_RENAMES).forEach(function (oldKey) {
+    const newKey = CONFIG_RENAMES[oldKey];
+    if (!existing[oldKey]) return;
+    if (existing[newKey]) return; // 새 이름이 이미 있으면 옛 줄은 아래에서 지웁니다
+    cfg.getRange(existing[oldKey], 1).setValue(newKey);
+    existing[newKey] = existing[oldKey];
+    delete existing[oldKey];
+  });
+
   CONFIG_DEFAULTS.forEach(function (def) {
     if (existing[def[0]]) {
       cfg.getRange(existing[def[0]], 3).setValue(def[2]); // 설명만 갱신
@@ -51,7 +67,7 @@ function setupSpreadsheet() {
     }
   });
   // 더 이상 쓰지 않는 항목은 아래에서 위로 지웁니다 (행 번호가 밀리지 않도록)
-  OBSOLETE_CONFIG_KEYS
+  OBSOLETE_CONFIG_KEYS.concat(Object.keys(CONFIG_RENAMES))
     .map(function (k) { return existing[k]; })
     .filter(function (r) { return !!r; })
     .sort(function (a, b) { return b - a; })

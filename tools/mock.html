@@ -48,9 +48,13 @@
     });
   }
 
+  // 주소 끝에 ?ended 를 붙이면 '신청 기간 종료' 화면을 볼 수 있습니다.
+  var ENDED = location.search.indexOf('ended') >= 0;
+
   var MOCK = {
     ok: true,
     title: '상담 신청',
+    windowMessage: ENDED ? '상담 신청 기간이 끝났습니다. (9월 30일 (수)까지)' : '',
     notice: '상담을 원하는 날짜와 시간을 고르고, 하고 싶은 이야기를 편하게 적어 주세요.',
     topics: ['학업·성적', '교우관계', '진로·진학', '가정', '정서·마음건강', '학교생활', '기타'],
     minChars: 20,

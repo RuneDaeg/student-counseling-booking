@@ -23,8 +23,8 @@ const CONFIG_DEFAULTS = [
   ['요일별 추가 시간대', '수:15:30, 금:15:30', '그 요일에만 더 여는 시간. 예: 수:15:30, 금:15:30 (없으면 비워 두세요)'],
   ['상담 1회 시간(분)', 30, '상담 한 건의 길이입니다. 끝나는 시각을 계산할 때 씁니다.'],
   ['운영 요일', '월,화,수,목,금', '상담을 받는 요일. 쉼표로 구분합니다.'],
-  ['예약 시작(오늘부터 며칠 뒤)', 1, '0이면 오늘부터 신청할 수 있습니다.'],
-  ['예약 종료(오늘부터 며칠 뒤)', 21, '오늘부터 며칠 뒤까지 신청을 받을지 정합니다.'],
+  ['예약 시작', 1, '숫자면 오늘부터 며칠 뒤(0=오늘), 날짜면 그 날부터. 예: 1 또는 2026-09-15'],
+  ['예약 종료', 21, '숫자면 오늘부터 며칠 뒤, 날짜면 그 날까지. 예: 21 또는 2026-10-15'],
   ['같은 시간대 최대 인원', 1, '한 시간대에 받을 수 있는 학생 수입니다.'],
   ['학생 1인 동시 예약 수', 1, '한 학생이 동시에 가질 수 있는 예약 건수입니다.'],
   ['마감 유예 시간(분)', 60, '상담 시작 몇 분 전까지 신청을 받을지 정합니다.'],
@@ -81,6 +81,10 @@ function getConfig() {
     }
   });
 
+  const today = todayKey_(tz);
+  const rangeStart = resolveRangeKey_(raw['예약 시작'], tz, today, 1);
+  const rangeEnd = resolveRangeKey_(raw['예약 종료'], tz, today, 21);
+
   return {
     tz: tz,
     title: str_(raw['앱 제목'], '상담 신청'),
@@ -91,8 +95,9 @@ function getConfig() {
     weekdays: parseWeekdays_(raw['운영 요일']),
     fixedGrade: str_(raw['고정 학년'], ''),
     fixedClass: str_(raw['고정 반'], ''),
-    leadDays: Math.max(0, num_(raw['예약 시작(오늘부터 며칠 뒤)'], 1)),
-    horizonDays: Math.max(0, num_(raw['예약 종료(오늘부터 며칠 뒤)'], 21)),
+    rangeStartKey: rangeStart,
+    firstKey: rangeStart < today ? today : rangeStart, // 이미 지난 시작일은 오늘로 당깁니다
+    lastKey: rangeEnd,
     capacity: Math.max(1, num_(raw['같은 시간대 최대 인원'], 1)),
     maxPerStudent: Math.max(1, num_(raw['학생 1인 동시 예약 수'], 1)),
     cutoffMinutes: Math.max(0, num_(raw['마감 유예 시간(분)'], 60)),
@@ -125,6 +130,8 @@ function str_(v, fallback) {
 }
 
 function num_(v, fallback) {
+  // 빈칸을 0 으로 읽지 않도록 합니다. (Number('') 은 0 입니다)
+  if (v === undefined || v === null || String(v).trim() === '') return fallback;
   const n = Number(v);
   return isNaN(n) ? fallback : n;
 }
@@ -155,6 +162,17 @@ function parseWeekdays_(v) {
     if (idx >= 0 && out.indexOf(idx + 1) < 0) out.push(idx + 1);
   });
   return out.length ? out : [1, 2, 3, 4, 5];
+}
+
+/**
+ * 예약 기간 설정값을 실제 날짜(yyyy-MM-dd)로 바꿉니다.
+ * - '2026-09-15' 또는 날짜 셀  → 그 날짜 그대로 (기간 고정)
+ * - 21 같은 숫자              → 오늘부터 21일 뒤 (기간이 매일 밀림)
+ */
+function resolveRangeKey_(v, tz, todayKey, fallbackDays) {
+  const asDate = toDateKey_(v, tz);
+  if (asDate) return asDate;
+  return addDaysKey_(todayKey, Math.max(0, num_(v, fallbackDays)));
 }
 
 /** '13:10, 16:30' → [790, 990] (자정부터의 분, 오름차순) */

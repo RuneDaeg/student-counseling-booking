@@ -4,6 +4,9 @@
  * - 이미 찬 시간대, 이미 지난 시간대도 빠집니다.
  */
 
+/** 설정을 잘못 적어도 화면이 멈추지 않도록 하루 개수를 제한합니다. */
+const MAX_RANGE_DAYS = 366;
+
 /** 웹앱 첫 화면이 부르는 함수 */
 function getAvailability() {
   const cfg = getConfig();
@@ -14,8 +17,8 @@ function getAvailability() {
   const nowMin = nowMinutes_(tz);
 
   const days = [];
-  for (let offset = cfg.leadDays; offset <= cfg.horizonDays; offset++) {
-    const key = addDaysKey_(today, offset);
+  let key = cfg.firstKey;
+  for (let guard = 0; key <= cfg.lastKey && guard < MAX_RANGE_DAYS; guard++, key = addDaysKey_(key, 1)) {
     const dow = dowFromKey_(key);
 
     if (cfg.weekdays.indexOf(dow) < 0) {
@@ -84,10 +87,19 @@ function getAvailability() {
     });
   }
 
+  // 고를 날짜가 하나도 없을 때만 이유를 알려 줍니다.
+  let windowMessage = '';
+  if (!days.length) {
+    windowMessage = today > cfg.lastKey
+      ? '상담 신청 기간이 끝났습니다. (' + formatDayLabel_(cfg.lastKey) + '까지)'
+      : '지금은 신청을 받지 않습니다. 설정의 예약 시작·종료 날짜를 확인해 주세요.';
+  }
+
   return {
     ok: true,
     title: cfg.title,
     notice: cfg.notice,
+    windowMessage: windowMessage,
     topics: cfg.topics,
     minChars: cfg.minChars,
     fixedGrade: cfg.fixedGrade,
@@ -147,9 +159,7 @@ function readSlotCounts_(tz) {
 function isSlotOpen_(cfg, dateKey, startTime) {
   const tz = cfg.tz;
   const today = todayKey_(tz);
-  const lastKey = addDaysKey_(today, cfg.horizonDays);
-  const firstKey = addDaysKey_(today, cfg.leadDays);
-  if (dateKey < firstKey || dateKey > lastKey) return '신청할 수 있는 기간이 아닙니다.';
+  if (dateKey < cfg.firstKey || dateKey > cfg.lastKey) return '신청할 수 있는 기간이 아닙니다.';
   if (cfg.weekdays.indexOf(dowFromKey_(dateKey)) < 0) return '상담을 받지 않는 요일입니다.';
 
   const startMin = parseTimeToMinutes_(startTime, tz, -1);
