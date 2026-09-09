@@ -5,6 +5,9 @@
  *
  * powered by 여광재 (온양고등학교)
  * https://github.com/RuneDaeg/student-counseling-booking
+ *
+ * Copyright 2026 여광재 (온양고등학교)
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 /** 설정을 잘못 적어도 화면이 멈추지 않도록 하루 개수를 제한합니다. */
