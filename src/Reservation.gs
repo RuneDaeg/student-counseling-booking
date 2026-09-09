@@ -4,6 +4,12 @@
 
 const MAX_TEXT = 4000;
 
+/** 메일 아래에 붙는 저작자 표시 */
+const MAIL_CREDIT =
+  '<p style="color:#a4abb8;font-size:11px;margin-top:18px;padding-top:12px;border-top:1px solid #e8eaef">' +
+  '학생 상담 신청 웹앱 · powered by <b>여광재</b> (온양고등학교)' +
+  '</p>';
+
 /** 학생이 [신청하기]를 누르면 실행됩니다. */
 function submitReservation(payload) {
   const cfg = getConfig();
@@ -239,6 +245,7 @@ function notifyTeacher_(cfg, booking, analysis) {
     '<div style="white-space:pre-wrap;background:#f6f7f9;border-radius:8px;padding:12px 14px;margin-bottom:20px">' + esc_(booking.concern) + '</div>' +
     (analysis ? renderAnalysisHtml_(analysis) : '<p style="color:#5b6472">AI 분석은 진행하지 않았습니다.</p>') +
     '<p style="color:#8a93a3;font-size:12px;margin-top:24px">학생이 직접 쓴 글과 AI가 정리한 초안입니다. 최종 판단과 상담 진행은 선생님께서 해 주세요.</p>' +
+    MAIL_CREDIT +
     '</div>';
 
   MailApp.sendEmail({ to: cfg.teacherEmail, subject: subject, htmlBody: html });
@@ -295,7 +302,7 @@ function sendTodayBriefing() {
       '<div style="white-space:pre-wrap;margin-top:8px">' + esc_(String(obj['AI 상담 초안'] || '')) + '</div></details>' +
       '</div>';
   });
-  html += '</div>';
+  html += MAIL_CREDIT + '</div>';
 
   MailApp.sendEmail({
     to: cfg.teacherEmail,

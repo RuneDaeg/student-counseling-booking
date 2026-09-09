@@ -1,5 +1,8 @@
 /**
  * 공통 상수 · 설정 시트 읽기 · 날짜/시간 유틸
+ *
+ * powered by 여광재 (온양고등학교)
+ * https://github.com/RuneDaeg/student-counseling-booking
  */
 
 const SHEET_CONFIG = '설정';

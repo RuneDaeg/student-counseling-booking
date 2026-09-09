@@ -1,5 +1,8 @@
 /**
  * 최초 설정 · 스프레드시트 메뉴
+ *
+ * powered by 여광재 (온양고등학교)
+ * https://github.com/RuneDaeg/student-counseling-booking
  */
 
 const BOOKING_HEADERS = [

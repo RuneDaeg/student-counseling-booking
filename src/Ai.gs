@@ -6,6 +6,9 @@
  *
  * 개인정보 최소화: 학생 이름과 번호는 AI에게 보내지 않고,
  * 학년 / 상담 주제 / 학생이 쓴 글만 보냅니다.
+ *
+ * powered by 여광재 (온양고등학교)
+ * https://github.com/RuneDaeg/student-counseling-booking
  */
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';

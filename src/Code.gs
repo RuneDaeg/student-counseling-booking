@@ -1,5 +1,8 @@
 /**
  * 웹앱 진입점
+ *
+ * powered by 여광재 (온양고등학교)
+ * https://github.com/RuneDaeg/student-counseling-booking
  */
 
 function doGet(e) {
