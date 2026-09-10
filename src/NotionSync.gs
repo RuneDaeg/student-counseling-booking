@@ -91,7 +91,21 @@ function syncNotion_(cfg) {
   if (!token) throw new Error('Notion 토큰이 없습니다. 메뉴 [노션 토큰 등록] 에서 넣어 주세요.');
 
   const dbId = normalizeNotionId_(cfg.notionDatabaseId);
-  if (!dbId) throw new Error('설정 시트의 [노션 데이터베이스 ID] 를 채워 주세요.');
+  if (!dbId) {
+    const seen = String(cfg.notionDatabaseId || '').trim();
+    throw new Error(
+      seen
+        ? '[노션 데이터베이스 ID] 에서 ID를 찾지 못했습니다.\n\n' +
+          '지금 읽은 값: "' + seen + '"\n\n' +
+          'Notion 데이터베이스를 열고 주소창의 주소를 통째로 붙여 넣어 주세요.\n' +
+          '32자리 영문·숫자 부분이 ID 입니다.\n' +
+          '(페이지 안에 끼워 넣은 표라면 [...] → 데이터베이스 링크 복사 를 쓰세요)'
+        : '[노션 데이터베이스 ID] 칸이 비어 있습니다.\n\n' +
+          '설정 시트에 그 줄이 보이지 않는다면 코드를 올린 뒤\n' +
+          '[상담 관리 > ① 최초 설정 실행] 을 한 번 눌러야 줄이 생깁니다.\n' +
+          '그 다음 B열에 Notion 데이터베이스 주소를 붙여 넣어 주세요.'
+    );
+  }
 
   const schema = notionSchema_(token, dbId);
   const sheet = getSheet_(SHEET_BOOKING);
@@ -208,12 +222,29 @@ function notionDateTime_(dateKey, time, tz) {
   return Utilities.formatDate(d, tz, "yyyy-MM-dd'T'HH:mm:ssXXX");
 }
 
-/** 주소를 통째로 넣어도 ID만 골라냅니다. 하이픈 유무 모두 허용. */
+/**
+ * 주소를 통째로 넣어도 ID만 골라냅니다.
+ * Notion 주소는 제목이 앞에 붙는 경우가 많아서(.../상담-일정-2696e6d0...),
+ * 앞에서부터 찾으면 제목 글자를 ID로 잘못 읽을 수 있습니다. 그래서 뒤에서부터 봅니다.
+ */
 function normalizeNotionId_(raw) {
   const s = String(raw || '').trim();
   if (!s) return '';
-  const m = s.replace(/-/g, '').match(/[0-9a-fA-F]{32}/);
-  return m ? m[0] : '';
+
+  // 주소면 물음표 앞, 마지막 / 뒤 조각만 봅니다
+  let token = s.split('?')[0].split('#')[0];
+  token = token.substring(token.lastIndexOf('/') + 1);
+
+  // 하이픈이 들어간 UUID 형태 그대로인 경우
+  const dashed = token.match(/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/);
+  if (dashed) return dashed[0].replace(/-/g, '');
+
+  const compact = token.replace(/-/g, '');
+  const tail = compact.match(/[0-9a-fA-F]{32}$/); // 제목 슬러그가 앞에 붙은 경우
+  if (tail) return tail[0];
+
+  const any = compact.match(/[0-9a-fA-F]{32}/);
+  return any ? any[0] : '';
 }
 
 /** Notion API 호출 */
