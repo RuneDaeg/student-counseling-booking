@@ -35,6 +35,7 @@ function onOpen() {
     .addItem('②-1 AI 워크스페이스 ID 등록 (필요할 때만)', 'promptWorkspaceId')
     .addItem('③ AI 연결 테스트', 'testAiConnection')
     .addSeparator()
+    .addItem('상담 달력 새로 그리기', 'refreshCalendar')
     .addItem('선택한 예약 AI 다시 분석', 'reanalyzeSelectedRows')
     .addItem('오늘 상담 브리핑 메일 받기', 'sendTodayBriefing')
     .addSeparator()
@@ -117,7 +118,10 @@ function setupSpreadsheet() {
   );
   applyRiskFormatting_(booking, bIdx);
 
-  // 4) 예약 마감/재분석용 정기 트리거
+  // 4) 상담 달력 시트
+  refreshCalendar();
+
+  // 5) 예약 마감/재분석용 정기 트리거
   ensureRecurringTrigger_();
 
   SpreadsheetApp.getActive().toast('시트 준비가 끝났습니다. 이어서 [② AI 키 등록]을 눌러 주세요.', '상담 관리', 8);

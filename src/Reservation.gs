@@ -79,10 +79,12 @@ function submitReservation(payload) {
     lock.releaseLock();
   }
 
+  // 분석을 하든 안 하든 예약해 둡니다. 달력도 이 트리거에서 함께 갱신됩니다.
+  scheduleAnalysis_();
+
   const willAnalyze = cfg.aiEnabled && data.concern && (data.aiConsent || !cfg.aiConsentRequired);
-  if (willAnalyze) {
-    scheduleAnalysis_(); // 분석이 끝나면 그때 교사에게 메일이 갑니다.
-  } else if (cfg.notifyMail) {
+  if (!willAnalyze && cfg.notifyMail) {
+    // 분석이 없으면 알림 메일을 지금 보냅니다. (분석이 있으면 끝난 뒤에 보냅니다)
     try {
       notifyTeacher_(cfg, bookingFromRow_(cfg, rowToObject_(row)), null);
     } catch (e) {

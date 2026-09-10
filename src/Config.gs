@@ -11,6 +11,7 @@
 const SHEET_CONFIG = '설정';
 const SHEET_BLOCK = '상담불가';
 const SHEET_BOOKING = '예약';
+const SHEET_CALENDAR = '상담달력';
 
 const PROP_SS_ID = 'SPREADSHEET_ID';
 const PROP_API_KEY = 'AI_API_KEY';

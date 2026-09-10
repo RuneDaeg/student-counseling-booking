@@ -374,11 +374,13 @@ function scheduleAnalysis_() {
  */
 function runPendingAnalysisOnce() {
   runPendingAnalysis(false);
+  refreshCalendarQuietly_(); // 새 신청을 달력에 반영
 }
 
-/** 10분마다 도는 안전망 (놓친 건 다시 처리) */
+/** 10분마다 도는 안전망 (놓친 건 다시 처리 + 달력 갱신) */
 function runPendingAnalysisScheduled() {
   runPendingAnalysis(false);
+  refreshCalendarQuietly_(); // 취소·직접 수정도 여기서 따라잡습니다
 }
 
 /**
