@@ -12,7 +12,7 @@ const BOOKING_HEADERS = [
   '예약번호', '신청시각', '상담일', '시작시각', '종료시각',
   '학년', '반', '번호', '이름',
   '상담유형', '고민내용', 'AI분석동의', '상태',
-  'AI 요약', 'AI 상담 초안', 'AI 관심신호', 'AI 분석시각', '교사 메모', '캘린더 일정ID'
+  'AI 요약', 'AI 상담 초안', 'AI 관심신호', 'AI 분석시각', '교사 메모', '캘린더 일정ID', '노션 페이지ID'
 ];
 
 const BLOCK_HEADERS = ['시작일', '종료일', '시작시각', '종료시각', '사유'];
@@ -37,6 +37,8 @@ function onOpen() {
     .addSeparator()
     .addItem('상담 달력 새로 그리기', 'refreshCalendar')
     .addItem('구글 캘린더에 일정 내보내기', 'syncCalendarNow')
+    .addItem('노션 토큰 등록', 'promptNotionToken')
+    .addItem('노션에 일정 내보내기', 'syncNotionNow')
     .addItem('선택한 예약 AI 다시 분석', 'reanalyzeSelectedRows')
     .addItem('오늘 상담 브리핑 메일 받기', 'sendTodayBriefing')
     .addSeparator()
@@ -117,7 +119,7 @@ function setupSpreadsheet() {
   booking.getRange(2, bIdx['상태'] + 1, rows, 1).setDataValidation(
     SpreadsheetApp.newDataValidation().requireValueInList([STATUS_ACTIVE, STATUS_CANCELED, STATUS_DONE], true).build()
   );
-  booking.hideColumns(bIdx['캘린더 일정ID'] + 1); // 기계용 값이라 감춥니다
+  booking.hideColumns(bIdx['캘린더 일정ID'] + 1, 2); // 기계용 값(캘린더·노션 ID)이라 감춥니다
   applyRiskFormatting_(booking, bIdx);
 
   // 4) 상담 달력 시트

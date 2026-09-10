@@ -376,6 +376,7 @@ function runPendingAnalysisOnce() {
   runPendingAnalysis(false);
   refreshCalendarQuietly_(); // 새 신청을 달력에 반영
   syncCalendarQuietly_();    // 구글 캘린더에도 (설정이 켜져 있을 때만)
+  syncNotionQuietly_();      // Notion 데이터베이스에도 (설정이 켜져 있을 때만)
 }
 
 /** 10분마다 도는 안전망 (놓친 건 다시 처리 + 달력 갱신) */
@@ -383,6 +384,7 @@ function runPendingAnalysisScheduled() {
   runPendingAnalysis(false);
   refreshCalendarQuietly_(); // 취소·직접 수정도 여기서 따라잡습니다
   syncCalendarQuietly_();
+  syncNotionQuietly_();
 }
 
 /**
