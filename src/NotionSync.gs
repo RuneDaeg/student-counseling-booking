@@ -15,7 +15,9 @@
  */
 
 const NOTION_API = 'https://api.notion.com/v1';
-const NOTION_VERSION = '2022-06-28';
+// 2025-09-03 부터 하나의 데이터베이스가 여러 '데이터 소스'를 가질 수 있습니다.
+// 예전 버전(2022-06-28)은 그런 데이터베이스를 아예 받지 않습니다.
+const NOTION_VERSION = '2025-09-03';
 const PROP_NOTION_TOKEN = 'NOTION_TOKEN';
 const NOTION_PAGE_COL = '노션 페이지ID';
 const NOTION_SYNC_LIMIT_MS = 3 * 60 * 1000;
@@ -107,7 +109,8 @@ function syncNotion_(cfg) {
     );
   }
 
-  const schema = notionSchema_(token, dbId);
+  const dataSourceId = resolveDataSourceId_(token, dbId);
+  const schema = notionSchema_(token, dataSourceId);
   const sheet = getSheet_(SHEET_BOOKING);
   const table = readTable_(sheet);
   const idCol = table.index[NOTION_PAGE_COL];
@@ -147,7 +150,7 @@ function syncNotion_(cfg) {
       result.updated++;
     } else {
       const page = notionRequest_(token, 'post', '/pages', {
-        parent: { database_id: dbId },
+        parent: { type: 'data_source_id', data_source_id: dataSourceId },
         properties: properties
       });
       sheet.getRange(rowNo, idCol + 1).setValue(page.id);
@@ -157,10 +160,39 @@ function syncNotion_(cfg) {
   return result;
 }
 
-/** 데이터베이스의 속성 구성을 읽어 어디에 무엇을 넣을지 정합니다. */
-function notionSchema_(token, dbId) {
-  const db = notionRequest_(token, 'get', '/databases/' + dbId, null);
-  const props = db.properties || {};
+/**
+ * 넣을 데이터 소스를 정합니다.
+ * 설정에 적은 ID 가 데이터 소스 ID 면 그대로 쓰고,
+ * 데이터베이스 ID 면 그 안의 데이터 소스를 찾아 씁니다.
+ */
+function resolveDataSourceId_(token, id) {
+  // 먼저 데이터 소스로 직접 열어 봅니다
+  try {
+    notionRequest_(token, 'get', '/data_sources/' + id, null);
+    return id;
+  } catch (e) {
+    // 데이터 소스가 아니면 아래에서 데이터베이스로 다뤄 봅니다
+  }
+
+  const db = notionRequest_(token, 'get', '/databases/' + id, null);
+  const sources = db.data_sources || [];
+
+  if (sources.length === 1) return sources[0].id;
+  if (sources.length === 0) return id; // 예전 형태의 데이터베이스
+
+  const list = sources.map(function (s) {
+    return '  · ' + s.name + '  →  ' + s.id;
+  }).join('\n');
+  throw new Error(
+    '이 데이터베이스에는 데이터 소스가 여러 개 있습니다.\n' +
+    '설정 시트의 [노션 데이터베이스 ID] 에 아래 중 하나의 ID 를 대신 적어 주세요.\n\n' + list
+  );
+}
+
+/** 데이터 소스의 속성 구성을 읽어 어디에 무엇을 넣을지 정합니다. */
+function notionSchema_(token, dataSourceId) {
+  const ds = notionRequest_(token, 'get', '/data_sources/' + dataSourceId, null);
+  const props = ds.properties || {};
 
   let titleProp = '';
   let dateProp = '';
