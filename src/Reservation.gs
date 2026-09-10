@@ -127,6 +127,7 @@ function cancelReservation(bookingId, name) {
         return { ok: false, message: '이미 취소된 신청입니다.' };
       }
       sheet.getRange(i + 2, table.index['상태'] + 1).setValue(STATUS_CANCELED);
+      scheduleAnalysis_(); // 달력과 구글 캘린더에서도 곧 지워지도록
       const dateKey = toDateKey_(row[table.index['상담일']], cfg.tz);
       return {
         ok: true,

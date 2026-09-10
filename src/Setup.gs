@@ -12,7 +12,7 @@ const BOOKING_HEADERS = [
   '예약번호', '신청시각', '상담일', '시작시각', '종료시각',
   '학년', '반', '번호', '이름',
   '상담유형', '고민내용', 'AI분석동의', '상태',
-  'AI 요약', 'AI 상담 초안', 'AI 관심신호', 'AI 분석시각', '교사 메모'
+  'AI 요약', 'AI 상담 초안', 'AI 관심신호', 'AI 분석시각', '교사 메모', '캘린더 일정ID'
 ];
 
 const BLOCK_HEADERS = ['시작일', '종료일', '시작시각', '종료시각', '사유'];
@@ -36,6 +36,7 @@ function onOpen() {
     .addItem('③ AI 연결 테스트', 'testAiConnection')
     .addSeparator()
     .addItem('상담 달력 새로 그리기', 'refreshCalendar')
+    .addItem('구글 캘린더에 일정 내보내기', 'syncCalendarNow')
     .addItem('선택한 예약 AI 다시 분석', 'reanalyzeSelectedRows')
     .addItem('오늘 상담 브리핑 메일 받기', 'sendTodayBriefing')
     .addSeparator()
@@ -116,6 +117,7 @@ function setupSpreadsheet() {
   booking.getRange(2, bIdx['상태'] + 1, rows, 1).setDataValidation(
     SpreadsheetApp.newDataValidation().requireValueInList([STATUS_ACTIVE, STATUS_CANCELED, STATUS_DONE], true).build()
   );
+  booking.hideColumns(bIdx['캘린더 일정ID'] + 1); // 기계용 값이라 감춥니다
   applyRiskFormatting_(booking, bIdx);
 
   // 4) 상담 달력 시트
@@ -131,17 +133,27 @@ function ensureSheet_(ss, name, headers) {
   let sheet = ss.getSheetByName(name);
   if (!sheet) sheet = ss.insertSheet(name);
   const oldCols = sheet.getLastColumn();
-  const current = sheet.getRange(1, 1, 1, Math.max(headers.length, oldCols || 1)).getValues()[0];
-  const same = headers.every(function (h, i) { return String(current[i]).trim() === h; });
+  const current = sheet.getRange(1, 1, 1, Math.max(headers.length, oldCols || 1)).getValues()[0]
+    .map(function (h) { return String(h).trim(); });
+  const same = oldCols <= headers.length && headers.every(function (h, i) { return current[i] === h; });
+
   if (!same) {
-    // 자료가 이미 들어 있는데 항목 구성이 다르면, 열이 밀려 값이 섞이므로 손대지 않습니다.
-    if (sheet.getLastRow() > 1) {
+    // 기존 머리글이 새 목록의 앞부분과 같다면 = 뒤에 열만 늘어난 경우.
+    // 이때는 값이 밀리지 않으므로 자료가 있어도 안전하게 머리글만 채웁니다.
+    let onlyAdded = oldCols <= headers.length;
+    for (let i = 0; i < oldCols && onlyAdded; i++) {
+      if (current[i] !== '' && current[i] !== headers[i]) onlyAdded = false;
+    }
+
+    // 자료가 있는데 열 순서까지 바뀌었다면 값이 섞이므로 손대지 않습니다.
+    if (!onlyAdded && sheet.getLastRow() > 1) {
       throw new Error(
         '"' + name + '" 시트의 항목 구성이 지금 코드와 다릅니다.\n' +
         '이미 들어 있는 자료가 밀릴 수 있어 자동으로 고치지 않았습니다.\n' +
         '기존 자료를 다른 시트에 복사해 두고 2행 아래를 모두 지운 뒤 다시 실행해 주세요.'
       );
     }
+
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
     if (oldCols > headers.length) {
       sheet.getRange(1, headers.length + 1, 1, oldCols - headers.length).clearContent();
