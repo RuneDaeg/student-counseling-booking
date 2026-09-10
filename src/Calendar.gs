@@ -45,7 +45,7 @@ function refreshCalendar() {
   // 조작 줄
   sheet.getRange('A1').setValue('기준 월').setFontWeight('bold');
   sheet.getRange('B1').setValue(startMonth).setNumberFormat('@');
-  sheet.getRange('C1', sheet.getRange('C1'))
+  sheet.getRange('C1')
     .setValue('← 여기를 바꾸고 [상담 관리 > 상담 달력 새로 그리기] 를 누르세요. 비우면 이번 달부터 그립니다.')
     .setFontColor('#6b7482');
   sheet.getRange('C1:G1').merge().setHorizontalAlignment('left');
