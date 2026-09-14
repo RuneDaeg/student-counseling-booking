@@ -35,23 +35,66 @@ function Invoke-Clasp {
     & npx --yes "@google/clasp@latest" @ClaspArgs
 }
 
+# 로그인해 둔 적이 있는지 봅니다. clasp 버전마다 자격증명 위치가 달라 모두 확인합니다.
+function Test-ClaspCredentials {
+    $paths = @(
+        (Join-Path $HOME ".clasprc.json"),
+        ".clasprc.json",
+        (Join-Path $HOME ".clasp\credentials.json")
+    )
+    foreach ($p in $paths) { if (Test-Path $p) { return $true } }
+    return $false
+}
+
+function Invoke-ClaspLogin {
+    Write-Host "  구글 계정 로그인이 필요합니다. 브라우저가 열립니다."
+    Invoke-Clasp @("login")
+    return ($LASTEXITCODE -eq 0)
+}
+
 if (Test-Path ".clasp.json") {
     Write-Host "  이미 연결된 프로젝트가 있습니다. 코드만 새로 올립니다."
+
+    # link.ps1 로 연결만 해 둔 경우에는 아직 로그인 전입니다.
+    # 그대로 올리려 하면 'No credentials found.' 로 멈춥니다.
+    if (-not (Test-ClaspCredentials)) {
+        if (-not (Invoke-ClaspLogin)) {
+            Write-Host "  [멈춤] 로그인에 실패했습니다."
+            exit 1
+        }
+    }
+
     Invoke-Clasp @("push", "--force")
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "  [멈춤] 올리지 못했습니다. 위 오류를 확인해 주세요."
-        exit 1
+        # 자격증명이 만료됐을 수 있습니다. 한 번만 다시 로그인해 봅니다.
+        Write-Host ""
+        Write-Host "  올리지 못했습니다. 로그인을 다시 해 봅니다."
+        if (-not (Invoke-ClaspLogin)) {
+            Write-Host "  [멈춤] 로그인에 실패했습니다."
+            exit 1
+        }
+        Invoke-Clasp @("push", "--force")
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host ""
+            Write-Host "  [멈춤] 코드를 올리지 못했습니다."
+            Write-Host "     https://script.google.com/home/usersettings 에서"
+            Write-Host "     'Google Apps Script API' 가 사용 설정돼 있는지 확인해 주세요."
+            exit 1
+        }
     }
+
     Write-Host ""
-    Write-Host "  올렸습니다. 학생 화면에 반영하려면 편집기에서 [배포 > 배포 관리]로"
-    Write-Host "  새 버전을 배포해 주세요. (스프레드시트 메뉴는 이미 바뀌었습니다)"
+    Write-Host "  올렸습니다. 학생 화면에 반영하려면 편집기에서"
+    Write-Host "  [배포 > 배포 관리 > 수정 > 새 버전] 을 해 주세요."
+    Write-Host "  (스프레드시트 메뉴는 새로고침하면 바로 바뀝니다)"
     Invoke-Clasp @("open-script")
     exit 0
 }
 
 Write-Host "  [1/4] 구글 계정 로그인 (브라우저가 열립니다)"
-Invoke-Clasp @("login")
-if ($LASTEXITCODE -ne 0) {
+if (Test-ClaspCredentials) {
+    Write-Host "        이미 로그인돼 있어 건너뜁니다."
+} elseif (-not (Invoke-ClaspLogin)) {
     Write-Host "  [멈춤] 로그인에 실패했습니다."
     exit 1
 }
