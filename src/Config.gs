@@ -24,6 +24,7 @@ const STATUS_DONE = '상담완료';
 
 /** 설정 시트의 기본값: [항목, 기본값, 설명] */
 const CONFIG_DEFAULTS = [
+  ['표준 시간대', '', '날짜·시각 계산의 기준입니다. 예: Asia/Seoul. 비우면 스크립트 시간대를 씁니다.'],
   ['앱 제목', '상담 신청', '학생에게 보이는 웹앱 제목입니다.'],
   ['안내 문구', '상담을 원하는 날짜와 시간을 고르고, 하고 싶은 이야기를 편하게 적어 주세요.', '첫 화면 상단 안내문입니다.'],
   ['상담 시간대', '13:10, 16:30', '학생이 고를 수 있는 시작 시각. 쉼표로 구분합니다. 예: 13:10, 16:30'],
@@ -69,13 +70,83 @@ function getSheet_(name) {
   return sheet;
 }
 
+/**
+ * 이 앱이 쓰는 단 하나의 시간대.
+ *
+ * 스프레드시트 시간대는 시트를 만든 구글 계정 지역을 따라가기 때문에
+ * 학교가 실제로 쓰는 시간대와 다른 경우가 많습니다. 그 상태로 두면
+ * 날짜가 하루씩 밀립니다. 그래서 설정 시트의 [표준 시간대] 를 먼저 믿습니다.
+ */
 function getTimeZone_() {
-  return getSpreadsheet_().getSpreadsheetTimeZone() || Session.getScriptTimeZone() || 'Asia/Seoul';
+  return resolveTimeZone_(readConfigValue_('표준 시간대'));
+}
+
+function resolveTimeZone_(wanted) {
+  const want = String(wanted === undefined || wanted === null ? '' : wanted).trim();
+  if (want && isValidTimeZone_(want)) return want;
+  // 스프레드시트 시간대는 시트를 만든 계정 지역을 그대로 따라가므로 덜 믿습니다.
+  // 스크립트 시간대는 이 앱을 설치할 때 정한 값이라 더 믿을 만합니다.
+  const script = scriptTimeZone_();
+  if (script && isValidTimeZone_(script)) return script;
+  return spreadsheetTimeZone_() || 'Asia/Seoul';
+}
+
+/**
+ * 'Asia/Seoul' 처럼 생겼는지 봅니다.
+ * 'KST' 나 '서울' 같은 값을 그냥 넘기면 조용히 GMT 로 계산돼 날짜가 밀립니다.
+ */
+function isValidTimeZone_(tz) {
+  if (!/^(UTC|GMT|[A-Za-z]+\/[A-Za-z0-9_+\-]+(\/[A-Za-z0-9_+\-]+)?)$/.test(tz)) return false;
+  try {
+    return /^\d{4}-\d{2}-\d{2}$/.test(Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd'));
+  } catch (e) {
+    return false;
+  }
+}
+
+/** 한 번 실행되는 동안에는 바뀌지 않으므로 기억해 둡니다. */
+let SS_TZ_CACHE_ = null;
+
+function spreadsheetTimeZone_() {
+  if (SS_TZ_CACHE_ === null) {
+    try {
+      SS_TZ_CACHE_ = getSpreadsheet_().getSpreadsheetTimeZone() || '';
+    } catch (e) {
+      SS_TZ_CACHE_ = '';
+    }
+  }
+  return SS_TZ_CACHE_;
+}
+
+function forgetSpreadsheetTimeZone_() {
+  SS_TZ_CACHE_ = null;
+}
+
+function scriptTimeZone_() {
+  try {
+    return Session.getScriptTimeZone() || '';
+  } catch (e) {
+    return '';
+  }
+}
+
+/** 설정 시트에서 한 항목만 꺼내 봅니다. (getConfig 을 부르기 전에 써야 할 때) */
+function readConfigValue_(key) {
+  try {
+    const sheet = getSpreadsheet_().getSheetByName(SHEET_CONFIG);
+    if (!sheet || sheet.getLastRow() < 2) return '';
+    const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, 2).getValues();
+    for (let i = 0; i < rows.length; i++) {
+      if (String(rows[i][0]).trim() === key) return rows[i][1];
+    }
+  } catch (e) {
+    // 시트가 아직 없을 수 있습니다.
+  }
+  return '';
 }
 
 /** 설정 시트를 읽어 사용하기 쉬운 형태로 돌려줍니다. */
 function getConfig() {
-  const tz = getTimeZone_();
   const raw = {};
   const sheet = getSpreadsheet_().getSheetByName(SHEET_CONFIG);
   if (sheet && sheet.getLastRow() > 1) {
@@ -85,13 +156,14 @@ function getConfig() {
     });
   }
   // 비워 두는 것이 의미 있는 항목은 기본값으로 되돌리지 않습니다.
-  const keepBlank = ['담당 교사 이메일', '고정 학년', '고정 반', '요일별 추가 시간대', 'AI 모델', '노션 데이터베이스 ID'];
+  const keepBlank = ['표준 시간대', '담당 교사 이메일', '고정 학년', '고정 반', '요일별 추가 시간대', 'AI 모델', '노션 데이터베이스 ID'];
   CONFIG_DEFAULTS.forEach(function (def) {
     if (raw[def[0]] === undefined || (raw[def[0]] === '' && keepBlank.indexOf(def[0]) < 0)) {
       raw[def[0]] = def[1];
     }
   });
 
+  const tz = resolveTimeZone_(raw['표준 시간대']);
   const today = todayKey_(tz);
   const rangeStart = resolveRangeKey_(raw['예약 시작'], tz, today, 1);
   const rangeEnd = resolveRangeKey_(raw['예약 종료'], tz, today, 21);
@@ -279,6 +351,15 @@ function dowFromKey_(key) {
 function toDateKey_(v, tz) {
   if (v === undefined || v === null || v === '') return '';
   if (Object.prototype.toString.call(v) === '[object Date]') {
+    // 시트의 '날짜만' 칸은 어느 시간대의 자정으로 읽힐지가 환경마다 다릅니다.
+    // 자정으로 딱 떨어지는 시간대를 찾아 그 날짜를 씁니다. (하루 밀림 방지)
+    const zones = [tz, spreadsheetTimeZone_(), scriptTimeZone_(), 'UTC'];
+    for (let i = 0; i < zones.length; i++) {
+      if (!zones[i]) continue;
+      if (Utilities.formatDate(v, zones[i], 'HHmmss') === '000000') {
+        return Utilities.formatDate(v, zones[i], 'yyyy-MM-dd');
+      }
+    }
     return Utilities.formatDate(v, tz, 'yyyy-MM-dd');
   }
   const m = String(v).trim().match(/(\d{4})\s*[-./년]\s*(\d{1,2})\s*[-./월]\s*(\d{1,2})/);

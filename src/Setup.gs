@@ -43,13 +43,13 @@ function onOpen() {
     .addItem('오늘 상담 브리핑 메일 받기', 'sendTodayBriefing')
     .addSeparator()
     .addItem('웹앱 주소 보기', 'showWebAppUrl')
+    .addItem('시간대 확인', 'showTimeZoneStatus')
     .addToUi();
 }
 
 /** 시트 3개를 만들고 서식·기본값을 채웁니다. 여러 번 눌러도 안전합니다. */
 function setupSpreadsheet() {
   const ss = getSpreadsheet_();
-  const tz = getTimeZone_();
 
   // 1) 설정 시트
   const cfg = ensureSheet_(ss, SHEET_CONFIG, CONFIG_HEADERS);
@@ -85,6 +85,10 @@ function setupSpreadsheet() {
   cfg.setColumnWidth(1, 200).setColumnWidth(2, 260).setColumnWidth(3, 420);
   cfg.getRange(2, 2, Math.max(1, cfg.getLastRow() - 1), 1).setNumberFormat('@'); // 값은 텍스트로
 
+  // 1-1) 시간대 맞추기 — 날짜가 하루 밀리는 일을 막는 가장 중요한 단계입니다.
+  const tz = getTimeZone_();
+  const notes = alignTimeZone_(ss, tz, cfg);
+
   // 2) 상담불가 시트
   const block = ensureSheet_(ss, SHEET_BLOCK, BLOCK_HEADERS);
   if (block.getLastRow() === 1) {
@@ -106,13 +110,14 @@ function setupSpreadsheet() {
   booking.setFrozenColumns(1);
   const bIdx = readTable_(booking).index;
   const rows = booking.getMaxRows() - 1;
-  booking.getRange(2, bIdx['상담일'] + 1, rows, 1).setNumberFormat('yyyy-mm-dd');
   booking.getRange(2, bIdx['신청시각'] + 1, rows, 1).setNumberFormat('yyyy-mm-dd hh:mm');
   booking.getRange(2, bIdx['AI 분석시각'] + 1, rows, 1).setNumberFormat('yyyy-mm-dd hh:mm');
-  // 시각·번호는 텍스트로 두어야 '15:30' 이 시간값으로 바뀌며 생기는 오차가 없습니다.
+  // 날짜·시각·번호는 텍스트로 둡니다. 날짜값·시간값으로 바뀌면 시트 시간대에 따라
+  // '2026-09-15' 가 하루 앞뒤로 읽히는 일이 생깁니다.
   ['예약번호', '시작시각', '종료시각'].forEach(function (h) {
     booking.getRange(2, bIdx[h] + 1, rows, 1).setNumberFormat('@');
   });
+  const fixedDates = normalizeBookingDates_(booking, bIdx, tz);
   [['고민내용', 320], ['AI 요약', 320], ['AI 상담 초안', 460], ['AI 관심신호', 200], ['교사 메모', 240]].forEach(function (c) {
     booking.setColumnWidth(bIdx[c[0]] + 1, c[1]);
   });
@@ -128,7 +133,124 @@ function setupSpreadsheet() {
   // 5) 예약 마감/재분석용 정기 트리거
   ensureRecurringTrigger_();
 
+  if (fixedDates) {
+    notes.push('이미 들어 있던 예약 ' + fixedDates + '건의 상담일을 글자 날짜로 정리했습니다.\n' +
+      '화면에 보이던 날짜는 그대로입니다.');
+  }
+
   SpreadsheetApp.getActive().toast('시트 준비가 끝났습니다. 이어서 [② AI 키 등록]을 눌러 주세요.', '상담 관리', 8);
+  if (notes.length) {
+    SpreadsheetApp.getUi().alert('시간대 정리\n\n· ' + notes.join('\n\n· '));
+  }
+}
+
+/** 메뉴: 지금 시간대가 어떻게 잡혀 있는지 확인합니다. */
+function showTimeZoneStatus() {
+  const ss = getSpreadsheet_();
+  const tz = getTimeZone_();
+  const now = new Date();
+  const script = scriptTimeZone_();
+  const sheetTz = ss.getSpreadsheetTimeZone();
+  const lines = [
+    '표준 시간대 (설정 시트): ' + tz,
+    '스프레드시트 시간대: ' + sheetTz + (sheetTz === tz ? '  ✓' : '  ← 다릅니다'),
+    '스크립트 시간대: ' + (script || '(알 수 없음)') + (script === tz ? '  ✓' : '  ← 다릅니다'),
+    '',
+    '지금 시각: ' + Utilities.formatDate(now, tz, 'yyyy-MM-dd HH:mm') + ' (' + tz + ')',
+    '앱이 아는 오늘: ' + todayKey_(tz)
+  ];
+  if (sheetTz !== tz || (script && script !== tz)) {
+    lines.push('', '세 값이 같아야 날짜가 밀리지 않습니다.');
+    lines.push('· 스프레드시트 시간대는 [① 최초 설정 실행] 을 누르면 자동으로 맞춰집니다.');
+    lines.push('· 스크립트 시간대는 Apps Script 편집기 [프로젝트 설정 > 시간대] 에서 바꿔 주세요.');
+  }
+  SpreadsheetApp.getUi().alert(lines.join('\n'));
+}
+
+/**
+ * 스프레드시트 시간대를 [표준 시간대] 에 맞춥니다.
+ *
+ * 시트 시간대는 시트를 만든 계정의 지역을 따라갑니다. 한국에서 쓰는데 시트가
+ * 미국 시간대로 되어 있으면, 학생이 고른 날짜와 시트·캘린더에 적히는 날짜가
+ * 하루씩 어긋납니다. 이미 들어 있는 날짜 값은 그대로 보존됩니다.
+ */
+function alignTimeZone_(ss, tz, cfgSheet) {
+  const notes = [];
+  const want = String(readConfigValue_('표준 시간대') || '').trim();
+  if (!want) {
+    // 비어 있으면 실제로 쓰는 값을 적어 두어 선생님이 보고 고칠 수 있게 합니다.
+    writeConfigValue_(cfgSheet, '표준 시간대', tz);
+  } else if (!isValidTimeZone_(want)) {
+    notes.push('설정의 [표준 시간대] 값 "' + want + '" 을 알아보지 못해 ' + tz + ' 로 계산합니다.\n' +
+      'Asia/Seoul 처럼 "지역/도시" 형태로 적어 주세요.');
+  }
+
+  const current = ss.getSpreadsheetTimeZone();
+  if (current !== tz) {
+    ss.setSpreadsheetTimeZone(tz);
+    forgetSpreadsheetTimeZone_();
+    notes.push('스프레드시트 시간대를 ' + current + ' → ' + tz + ' 로 맞췄습니다.');
+  }
+
+  const script = scriptTimeZone_();
+  if (script && script !== tz) {
+    notes.push('스크립트 시간대가 ' + script + ' 입니다.\n' +
+      'Apps Script 편집기 [프로젝트 설정 > 시간대] 에서 ' + tz + ' 로 바꿔 주세요.');
+  }
+  return notes;
+}
+
+/**
+ * '상담일' 칸을 글자 날짜(yyyy-MM-dd)로 통일합니다.
+ *
+ * 날짜값으로 들어 있으면 시간대에 따라 하루씩 다르게 읽힐 수 있습니다.
+ * 시각 칸을 텍스트로 두는 것과 같은 이유입니다.
+ * 화면에 보이던 날짜를 그대로 옮기므로 값이 바뀌지 않습니다.
+ */
+function normalizeBookingDates_(sheet, idx, tz) {
+  const col = idx['상담일'] + 1;
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) {
+    sheet.getRange(2, col, sheet.getMaxRows() - 1, 1).setNumberFormat('@');
+    return 0;
+  }
+
+  const range = sheet.getRange(2, col, lastRow - 1, 1);
+  const values = range.getValues();
+  const shown = range.getDisplayValues();
+  const out = [];
+  let changed = 0;
+
+  for (let i = 0; i < values.length; i++) {
+    const before = values[i][0];
+    if (before === '' || before === null || before === undefined) {
+      out.push(['']);
+      continue;
+    }
+    // 셀에 보이던 글자를 먼저 믿습니다. 선생님과 학생이 본 날짜가 그것이기 때문입니다.
+    const key = toDateKey_(shown[i][0], tz) || toDateKey_(before, tz);
+    if (!key) {
+      out.push([before]);
+      continue;
+    }
+    if (String(before) !== key) changed++;
+    out.push([key]);
+  }
+
+  sheet.getRange(2, col, sheet.getMaxRows() - 1, 1).setNumberFormat('@');
+  range.setValues(out);
+  return changed;
+}
+
+/** 설정 시트의 한 항목에 값을 적습니다. */
+function writeConfigValue_(sheet, key, value) {
+  const last = sheet.getLastRow();
+  for (let r = 2; r <= last; r++) {
+    if (String(sheet.getRange(r, 1).getValue()).trim() === key) {
+      sheet.getRange(r, 2).setNumberFormat('@').setValue(value);
+      return;
+    }
+  }
 }
 
 function ensureSheet_(ss, name, headers) {

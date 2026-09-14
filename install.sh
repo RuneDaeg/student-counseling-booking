@@ -30,20 +30,66 @@ if ! command -v node > /dev/null 2>&1; then
   exit 1
 fi
 
+# 로그인해 둔 적이 있는지 봅니다. clasp 버전마다 자격증명 위치가 달라 모두 확인합니다.
+has_credentials() {
+  [ -f "$HOME/.clasprc.json" ] || [ -f ".clasprc.json" ] || [ -f "$HOME/.clasp/credentials.json" ]
+}
+
+do_login() {
+  echo "  구글 계정 로그인이 필요합니다. 브라우저가 열립니다."
+  $CLASP login
+}
+
+api_hint() {
+  echo "     https://script.google.com/home/usersettings 에서"
+  echo "     'Google Apps Script API' 가 사용 설정돼 있는지 확인해 주세요."
+}
+
 if [ -f ".clasp.json" ]; then
-  echo "  이미 설치된 프로젝트가 있습니다. 코드만 새로 올립니다."
-  $CLASP push --force
+  echo "  이미 연결된 프로젝트가 있습니다. 코드만 새로 올립니다."
+
+  # link.sh 로 연결만 해 둔 경우에는 아직 로그인 전입니다.
+  # 그대로 올리려 하면 'No credentials found.' 로 멈춥니다.
+  if ! has_credentials; then
+    do_login || {
+      echo "  [멈춤] 로그인에 실패했습니다."
+      exit 1
+    }
+  fi
+
+  if ! $CLASP push --force; then
+    # 자격증명이 만료됐을 수 있습니다. 한 번만 다시 로그인해 봅니다.
+    echo ""
+    echo "  올리지 못했습니다. 로그인을 다시 해 봅니다."
+    do_login || {
+      echo "  [멈춤] 로그인에 실패했습니다."
+      exit 1
+    }
+    $CLASP push --force || {
+      echo ""
+      echo "  [멈춤] 코드를 올리지 못했습니다."
+      api_hint
+      exit 1
+    }
+  fi
+
   echo ""
-  echo "  올렸습니다. 편집기를 엽니다."
+  echo "  올렸습니다. 학생 화면에 반영하려면 편집기에서"
+  echo "  [배포 > 배포 관리 > 수정 > 새 버전] 을 해 주세요."
+  echo "  (스프레드시트 메뉴는 새로고침하면 바로 바뀝니다)"
   $CLASP open-script || true
   exit 0
 fi
 
 echo "  [1/4] 구글 계정 로그인 (브라우저가 열립니다)"
-$CLASP login || {
-  echo "  [멈춤] 로그인에 실패했습니다."
-  exit 1
-}
+if has_credentials; then
+  echo "        이미 로그인돼 있어 건너뜁니다."
+else
+  do_login || {
+    echo "  [멈춤] 로그인에 실패했습니다."
+    exit 1
+  }
+fi
 
 echo ""
 echo "  [2/4] 구글 드라이브에 스프레드시트와 스크립트를 만듭니다"
