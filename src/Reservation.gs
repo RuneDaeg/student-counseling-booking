@@ -74,7 +74,13 @@ function submitReservation(payload) {
     setCell_(row, table.index, 'AI분석동의', data.aiConsent ? '동의' : '미동의');
     setCell_(row, table.index, '상태', STATUS_ACTIVE);
     sheet.appendRow(row);
-    sheet.getRange(sheet.getLastRow(), table.index['고민내용'] + 1).setWrap(true);
+    const rowNo = sheet.getLastRow();
+    // 날짜·시각은 글자 그대로 남깁니다. 시트가 날짜값으로 바꿔 버리면
+    // 시간대에 따라 하루가 밀릴 수 있습니다.
+    keepAsText_(sheet, rowNo, table.index['상담일'], data.date);
+    keepAsText_(sheet, rowNo, table.index['시작시각'], minutesToTime_(startMin));
+    keepAsText_(sheet, rowNo, table.index['종료시각'], minutesToTime_(startMin + cfg.slotMinutes));
+    sheet.getRange(rowNo, table.index['고민내용'] + 1).setWrap(true);
   } finally {
     lock.releaseLock();
   }
@@ -168,6 +174,12 @@ function clean_(v, max) {
 
 function setCell_(row, index, header, value) {
   if (index[header] !== undefined) row[index[header]] = value;
+}
+
+/** 그 칸을 '글자'로 못 박고 값을 다시 씁니다. */
+function keepAsText_(sheet, rowNo, colIndex, value) {
+  if (colIndex === undefined) return;
+  sheet.getRange(rowNo, colIndex + 1).setNumberFormat('@').setValue(value);
 }
 
 function rowToObject_(row) {
